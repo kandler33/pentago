@@ -469,6 +469,8 @@ def update_images(new_colors=None, scale=1) -> None:
 
     game_folder = os.path.dirname(__file__)
     img_folder = os.path.join(game_folder, 'pentago_img')
+    if not os.path.exists(img_folder):
+        os.mkdir(img_folder)
     base_img_folder = os.path.join(game_folder, 'base_img')
     themeable_folder = os.path.join(base_img_folder, 'themeable')
     hoverable_folder = os.path.join(themeable_folder, 'hoverable')
@@ -493,11 +495,14 @@ def update_images(new_colors=None, scale=1) -> None:
                 new_img.save(os.path.join(img_folder, filename))
 
     for filename in os.listdir(themeable_folder):
+        coef = 1
+        if filename in ('x_won_text.png', 'o_won_text.png'):
+            coef = 2
         if os.path.isfile(os.path.join(themeable_folder, filename)):
             with Image.open(os.path.join(themeable_folder, filename)).convert('RGBA') as base_img:
-                new_img = Image.new('RGBA', tuple(i * scale for i in base_img.size))
+                new_img = Image.new('RGBA', tuple(i * scale * coef for i in base_img.size))
                 data = tuple(split_by_len(tuple(base_img.getdata()), base_img.width))
-                new_data = tuple(map(lambda x: palet.get(x, (255, 255, 255, 0)), scaled_data_gen(data, scale)))
+                new_data = tuple(map(lambda x: palet.get(x, (255, 255, 255, 0)), scaled_data_gen(data, scale * coef)))
                 new_img.putdata(new_data)
                 new_img.save(os.path.join(img_folder, filename))
 
