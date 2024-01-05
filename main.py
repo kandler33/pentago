@@ -3,7 +3,6 @@ import os
 from PIL import Image
 import pickle
 import time
-import asyncio
 
 
 class SpriteObject(pygame.sprite.Sprite):
@@ -41,12 +40,16 @@ class CordSpriteObject(SpriteObject):
 class Button(CordSpriteObject):
     def __init__(self, imgs, cords):
         super().__init__(imgs[0], cords)
+        self.active = False
         self.imgs_path = imgs
         self.basic_image = pygame.image.load(imgs[0])
         self.hovered_image = pygame.image.load(imgs[1])
         self.image = self.basic_image
 
-    def update(self):
+    def set_active(self, active: bool) -> None:
+        self.active = active
+
+    def update(self, event=None):
         if collide(pygame.mouse.get_pos(), self):
             self.image = self.hovered_image
         else:
@@ -75,7 +78,7 @@ class ChoiceButton(Button):
         if self.clicked:
             self.image = self.clicked_image
 
-    def update(self):
+    def update(self, event=None):
         if self.clicked:
             self.image = self.clicked_image
 
@@ -106,8 +109,10 @@ class ChoiceButton(Button):
 
 
 class SubField(pygame.sprite.Sprite):
-    def __init__(self, num, img):
-        super().__init__()
+    def __init__(self, num, img, field):
+        super().__init__(subfield_sprites)
+        self.field = field
+        self.active = False
         self.img_path = img
         self.image = pygame.image.load(img)
         self.rect = self.image.get_rect()
@@ -115,22 +120,27 @@ class SubField(pygame.sprite.Sprite):
         self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
         for row in self.field_list:
             all_sprites.add(*row)
+        self.counterclockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][0](SUBFIELD_CORDS[num]),
+                                            arrow_files[num][0], self, False)
+        self.clockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][1](SUBFIELD_CORDS[num]),
+                                     arrow_files[num][1], self, True)
 
     def add_sign(self, x, y):
-        global current_sign, current_step
-        if type(self.field_list[y][x]) == Cell:
-            self.field_list[y][x].kill()
-            if current_sign == 1:
-                self.field_list[y][x] = Cross(self, cross_img, x, y)
-                current_sign = 0
-            else:
-                self.field_list[y][x] = Zero(self, zero_img, x, y)
-                current_sign = 1
-            all_sprites.add(self.field_list[y][x])
-            if is_any_empty_subfields():
-                current_step = -1
-            else:
-                current_step = 1
+        if type(self.field_list[y][x]) != Cell:
+            return
+
+        self.field_list[y][x].kill()
+        if self.field.current_sign == 1:
+            self.field_list[y][x] = Cross(self, cross_img, x, y)
+            self.field.current_sign = 0
+        else:
+            self.field_list[y][x] = Zero(self, zero_img, x, y)
+            self.field.current_sign = 1
+        all_sprites.add(self.field_list[y][x])
+        if field.is_any_empty_subfields():
+            self.field.current_step = -1
+        else:
+            self.field.current_step = 1
 
     def rotate_counterclockwise(self):
         new_field_list = [[None] * 3, [None] * 3, [None] * 3]
@@ -171,8 +181,22 @@ class SubField(pygame.sprite.Sprite):
     def update_theme(self):
         self.image = pygame.image.load(self.img_path)
 
+    def update(self, event=None):
+        pass
+
+    def set_active(self, active: bool) -> None:
+        print(f'changing {str(self)}.active from {self.active} to {active}')
+        self.active = active
+        for row in self.field_list:
+            for cell in row:
+                cell.set_active(active)
+
+    def set_arrows_active(self, active: bool) -> None:
+        self.counterclockwise_arrow.set_active(active)
+        self.clockwise_arrow.set_active(active)
+
     def __str__(self):
-        return f'SubField {field.index(self)}'
+        return f'SubField {field.field.index(self)}'
 
     def __getitem__(self, key):
         return self.field_list[key]
@@ -183,30 +207,35 @@ class Arrow(Button):
         super().__init__(imgs, cords)
         self.subfield = subfield
         self.clockwise = clockwise
+        self.add(arrow_sprites)
 
     def click(self):
-        global current_step
         if self.clockwise:
             self.subfield.rotate_clockwise()
         else:
             self.subfield.rotate_counterclockwise()
 
-        current_step = 0
+        self.subfield.field.current_step = 0
 
-    def update(self):
-        if game_active and not settings_opened and current_step in (-1, 1) and collide(pygame.mouse.get_pos(), self):
+    def update(self, event=None):
+        if self.active and collide(pygame.mouse.get_pos(), self):
             self.image = self.hovered_image
         else:
             self.image = self.basic_image
+
+        if event is not None and event.type == pygame.MOUSEBUTTONUP:
+            if self.active and collide(event.pos, self):
+                self.click()
 
     def __str__(self):
         return f'({"clockwise" if self.clockwise else "counterclockwise"} Arrow of {str(self.subfield)})'
 
 
 class Cell(pygame.sprite.Sprite):
-    def __init__(self, field, x, y):
+    def __init__(self, subfield, x, y):
         super().__init__()
-        self.subfield = field
+        self.subfield = subfield
+        self.active = False
         self.cords = (x, y)
         self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
         self.basic_image.fill(settings.get_color('background_color'))
@@ -217,6 +246,9 @@ class Cell(pygame.sprite.Sprite):
         self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
                              self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
 
+    def set_active(self, active: bool) -> None:
+        self.active = active
+
     def get_cords(self):
         return self.cords
 
@@ -225,11 +257,15 @@ class Cell(pygame.sprite.Sprite):
         self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
                              self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
 
-    def update(self):
-        if game_active and not settings_opened and current_step in (-1, 0) and collide(pygame.mouse.get_pos(), self):
+    def update(self, event=None):
+        if self.active and collide(pygame.mouse.get_pos(), self):
             self.image = self.hovered_image
         else:
             self.image = self.basic_image
+
+        if event is not None and event.type == pygame.MOUSEBUTTONUP:
+            if self.active and collide(event.pos, self):
+                self.subfield.add_sign(*self.cords)
 
     def update_scale(self, *args):
         self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
@@ -259,7 +295,7 @@ class Sign(Cell):
         self.img_path = image
         self.image = pygame.image.load(self.img_path)
 
-    def update(self):
+    def update(self, event=None):
         pass
 
     def update_scale(self, *args):
@@ -281,6 +317,139 @@ class Cross(Sign):
 class Zero(Sign):
     def __init__(self, field, zero_img, x, y):
         super().__init__(field, zero_img, x, y)
+
+
+class Field:
+    def __init__(self):
+        self.field = [SubField(i, subfield_img, self)
+                      for i in range(4)]
+        self._active = False
+        self._current_step = 0
+        self.current_sign = 0
+        self.cross_won = False
+        self.zero_won = False
+        self.draw = False
+
+    @property
+    def active(self):
+        return self._active
+
+    @active.setter
+    def active(self, active: bool):
+        print(f'changing field.active from {self._active} to {active}')
+        self._active = active
+        if not self.active:
+            self.set_subfields_active(False)
+            self.set_arrows_active(False)
+        else:
+            self.update()
+
+    @property
+    def current_step(self):
+        return self._current_step
+
+    @current_step.setter
+    def current_step(self, current_step):
+        if current_step not in (-1, 0, 1):
+            raise ValueError(f'invalid current_step: {current_step}')
+        self._current_step = current_step
+        self.update()
+
+    def unite(self):
+        res = [None] * 6
+        for i in range(3):
+            res[i] = self.field[0][i] + self.field[1][i]
+            res[3+i] = self.field[2][i] + self.field[3][i]
+        return res
+
+    def is_any_empty_subfields(self):
+        return any([subfield.is_empty() for subfield in self.field])
+
+    def update(self):
+        self.set_subfields_active(False)
+        self.set_arrows_active(False)
+
+        if self.current_step in (-1, 0):
+            self.set_subfields_active(True)
+
+        if self.current_step in (-1, 1):
+            self.set_arrows_active(True)
+
+        self.win_draw_check()
+
+        if self.cross_won or self.zero_won or self.draw:
+            self.active = False
+
+    def set_subfields_active(self, active: bool) -> None:
+        for subfield in self.field:
+            subfield.set_active(active)
+
+    def set_arrows_active(self, active: bool) -> None:
+        for subfield in self.field:
+            subfield.set_arrows_active(active)
+
+    def win_draw_check(self):
+        type_field = list(map(lambda x: [type(i) for i in x], self.unite()))
+
+        for i in range(6):
+            # horizontal
+            if [type_field[i][j] for j in range(5)].count(Cross) == 5 or [type_field[i][j] for j in range(1, 6)].count(
+                    Cross) == 5:
+                self.cross_won = True
+            if [type_field[i][j] for j in range(5)].count(Zero) == 5 or [type_field[i][j] for j in range(1, 6)].count(Zero) == 5:
+                self.zero_won = True
+
+            # vertical
+            if [type_field[j][i] for j in range(5)].count(Cross) == 5 or [type_field[j][i] for j in range(1, 6)].count(
+                    Cross) == 5:
+                self.cross_won = True
+            if [type_field[j][i] for j in range(5)].count(Zero) == 5 or [type_field[j][i] for j in range(1, 6)].count(Zero) == 5:
+                self.zero_won = True
+
+        # main diagonals
+        if any(([type_field[i][i + 1] for i in range(5)].count(Cross) == 5,
+                [type_field[i][i] for i in range(5)].count(Cross) == 5,
+                [type_field[i][i] for i in range(1, 6)].count(Cross) == 5,
+                [type_field[i + 1][i] for i in range(5)].count(Cross) == 5)):
+            self.cross_won = True
+
+        if any(([type_field[i][i + 1] for i in range(5)].count(Zero) == 5,
+                [type_field[i][i] for i in range(5)].count(Zero) == 5,
+                [type_field[i][i] for i in range(1, 6)].count(Zero) == 5,
+                [type_field[i + 1][i] for i in range(5)].count(Zero) == 5)):
+            self.zero_won = True
+
+        # side diagonals
+        if any(([type_field[5 - i][i + 1] for i in range(5)].count(Cross) == 5,
+                [type_field[5 - i][i] for i in range(5)].count(Cross) == 5,
+                [type_field[5 - i][i] for i in range(1, 6)].count(Cross) == 5,
+                [type_field[4 - i][i] for i in range(5)].count(Cross) == 5)):
+            self.zero_won = True
+
+        if any(([type_field[5 - i][i + 1] for i in range(5)].count(Zero) == 5,
+                [type_field[5 - i][i] for i in range(5)].count(Zero) == 5,
+                [type_field[5 - i][i] for i in range(1, 6)].count(Zero) == 5,
+                [type_field[4 - i][i] for i in range(5)].count(Zero) == 5)):
+            self.zero_won = True
+
+        # draw check
+        if all([all([i != Cell for i in row]) for row in type_field]):
+            self.draw = True
+
+        if self.cross_won and self.zero_won:
+            self.cross_won, self.zero_won = False, False
+            self.draw = True
+
+    def restart(self):
+        for subfield in self.field:
+            subfield.restart()
+        self.cross_won = False
+        self.zero_won = False
+        self.draw = False
+        self.current_sign = 1
+        self.current_step = 0
+        self.active = True
+        self.update()
 
 
 class Settings:
@@ -371,94 +540,16 @@ def collide(cords, obj):
     return False
 
 
-def add_sign(subfield, cords):
-    for row in subfield.field_list:
-        for cell in row:
-            if collide(cords, cell):
-                subfield.add_sign(*cell.get_cords())
-
-
-def unite_field():
-    res = [None] * 6
-    for i in range(3):
-        res[i] = field[0][i] + field[1][i]
-        res[3 + i] = field[2][i] + field[3][i]
-    return res
-
-
-def win_draw_check():
-    global cross_win_condition, zero_win_condition, draw_condition
-    field = list(map(lambda x: [type(i) for i in x], unite_field()))
-
-    for i in range(6):
-        # horizontal
-        if [field[i][j] for j in range(5)].count(Cross) == 5 or [field[i][j] for j in range(1, 6)].count(Cross) == 5:
-            cross_win_condition = True
-        if [field[i][j] for j in range(5)].count(Zero) == 5 or [field[i][j] for j in range(1, 6)].count(Zero) == 5:
-            zero_win_condition = True
-
-        # vertical
-        if [field[j][i] for j in range(5)].count(Cross) == 5 or [field[j][i] for j in range(1, 6)].count(Cross) == 5:
-            cross_win_condition = True
-        if [field[j][i] for j in range(5)].count(Zero) == 5 or [field[j][i] for j in range(1, 6)].count(Zero) == 5:
-            zero_win_condition = True
-
-    # main diagonals
-    if any(([field[i][i + 1] for i in range(5)].count(Cross) == 5,
-            [field[i][i] for i in range(5)].count(Cross) == 5,
-            [field[i][i] for i in range(1, 6)].count(Cross) == 5,
-            [field[i + 1][i] for i in range(5)].count(Cross) == 5)):
-        cross_win_condition = True
-
-    if any(([field[i][i + 1] for i in range(5)].count(Zero) == 5,
-            [field[i][i] for i in range(5)].count(Zero) == 5,
-            [field[i][i] for i in range(1, 6)].count(Zero) == 5,
-            [field[i + 1][i] for i in range(5)].count(Zero) == 5)):
-        zero_win_condition = True
-
-    # side diagonals
-    if any(([field[5 - i][i + 1] for i in range(5)].count(Cross) == 5,
-            [field[5 - i][i] for i in range(5)].count(Cross) == 5,
-            [field[5 - i][i] for i in range(1, 6)].count(Cross) == 5,
-            [field[4 - i][i] for i in range(5)].count(Cross) == 5)):
-        zero_win_condition = True
-
-    if any(([field[5 - i][i + 1] for i in range(5)].count(Zero) == 5,
-            [field[5 - i][i] for i in range(5)].count(Zero) == 5,
-            [field[5 - i][i] for i in range(1, 6)].count(Zero) == 5,
-            [field[4 - i][i] for i in range(5)].count(Zero) == 5)):
-        zero_win_condition = True
-
-    # draw check
-    if all([all([i != Cell for i in row]) for row in field]):
-        draw_condition = True
-
-    if cross_win_condition and zero_win_condition:
-        cross_win_condition, zero_win_condition = False, False
-        draw_condition = True
-
-
 def restart():
     global field, text_sprites
-    global current_step, current_sign, game_active, info_panel_opened, settings_opened
-    global cross_win_condition, zero_win_condition, draw_condition
+    global game_active, info_panel_opened, settings_opened
     for sprite in text_sprites:
         sprite.kill()
-    for subfield in field:
-        subfield.restart()
 
     game_active = True
     info_panel_opened = False
     settings_opened = False
-    cross_win_condition = False
-    zero_win_condition = False
-    draw_condition = False
-    current_sign = 1
-    current_step = 0
-
-
-def is_any_empty_subfields():
-    return any([subfield.is_empty() for subfield in field])
+    field.restart()
 
 
 @time_decorator
@@ -709,7 +800,7 @@ if __name__ == '__main__':
     arrow_sprites = pygame.sprite.Group()
     all_sprites = pygame.sprite.Group()
     all_sprites_list = []
-    field = []
+    field = Field()
     arrows = []
     text_sprites = (cross_won_sprite, zero_won_sprite, draw_sprite, restart_sprite)
 
@@ -718,18 +809,6 @@ if __name__ == '__main__':
     info_sprites.add(info_panel, close_button)
     settings_sprites.add(settings_panel, rules_button, screen_settings_text, basic_theme_button, pink_theme_button,
                          resolution_1x_button, resolution_2x_button, basic_theme_button_frame, pink_theme_button_frame)
-    count = 0
-    for cords in SUBFIELD_CORDS:
-        subfield = SubField(count, subfield_img)
-        field.append(subfield)
-        subfield_sprites.add(subfield)
-        arrow1 = Arrow(ARROW_CORDS_OPERATIONS[count][0](cords),
-                       arrow_files[count][0], subfield, False)
-        arrow2 = Arrow(ARROW_CORDS_OPERATIONS[count][1](cords),
-                       arrow_files[count][1], subfield, True)
-        arrow_sprites.add(arrow1, arrow2)
-        arrows.extend([arrow1, arrow2])
-        count += 1
 
     all_sprites.add(subfield_sprites, arrow_sprites, top_panel_sprites)
     all_sprites_list.extend(subfield_sprites)
@@ -740,18 +819,16 @@ if __name__ == '__main__':
 
     restart()
 
-    # Цикл игры
     running = True
     while running:
-        # Держим цикл на правильной скорости
         clock.tick(FPS)
-        # Ввод процесса (события)
         for event in pygame.event.get():
             # check for closing window
             if event.type == pygame.QUIT:
                 with open('settings.pkl', 'wb') as file:
                     pickle.dump(settings, file)
                 running = False
+            all_sprites.update(event)
 
             if event.type == pygame.MOUSEBUTTONUP:
                 cords = pygame.mouse.get_pos()
@@ -768,6 +845,7 @@ if __name__ == '__main__':
                         elif collide(cords, settings_button):
                             all_sprites.remove(settings_sprites)
                             settings_opened = False
+                            field.active = True
 
                         elif collide(cords, resolution_1x_button):
                             settings.update_scale(1)
@@ -801,42 +879,23 @@ if __name__ == '__main__':
                     if collide(cords, settings_button):
                         all_sprites.add(settings_sprites)
                         settings_opened = True
+                        field.active = False
 
                     if collide(cords, restart_button):
                         restart()
 
-                    if game_active:
-                        if current_step == -1:
-                            for subfield in subfield_sprites:
-                                if collide(cords, subfield):
-                                    add_sign(subfield, cords)
-                            for arrow in arrows:
-                                if collide(cords, arrow):
-                                    arrow.click()
-
-                        if current_step == 0:
-                            for subfield in subfield_sprites:
-                                if collide(cords, subfield):
-                                    add_sign(subfield, cords)
-
-                        if current_step == 1:
-                            for arrow in arrows:
-                                if collide(cords, arrow):
-                                    arrow.click()
-
-                        win_draw_check()
-                        if cross_win_condition:
-                            cross_won_sprite.add(all_sprites)
-                            restart_sprite.add(all_sprites)
-                            game_active = False
-                        if zero_win_condition:
-                            zero_won_sprite.add(all_sprites)
-                            restart_sprite.add(all_sprites)
-                            game_active = False
-                        if draw_condition:
-                            draw_sprite.add(all_sprites)
-                            restart_sprite.add(all_sprites)
-                            game_active = False
+                    if field.cross_won:
+                        cross_won_sprite.add(all_sprites)
+                        restart_sprite.add(all_sprites)
+                        field.active = False
+                    if field.zero_won:
+                        zero_won_sprite.add(all_sprites)
+                        restart_sprite.add(all_sprites)
+                        field.active = False
+                    if field.draw:
+                        draw_sprite.add(all_sprites)
+                        restart_sprite.add(all_sprites)
+                        field.active = False
 
             if event.type == pygame.KEYDOWN:
 
