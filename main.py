@@ -38,22 +38,28 @@ class CordSpriteObject(SpriteObject):
 
 
 class Button(CordSpriteObject):
-    def __init__(self, imgs, cords):
+    def __init__(self, imgs, cords, action=None):
         super().__init__(imgs[0], cords)
-        self.active = False
+        self.active = True
         self.imgs_path = imgs
         self.basic_image = pygame.image.load(imgs[0])
         self.hovered_image = pygame.image.load(imgs[1])
         self.image = self.basic_image
+        if action is None:
+            self.action = lambda: None
+        else:
+            self.action = action
 
     def set_active(self, active: bool) -> None:
         self.active = active
 
     def update(self, event=None):
-        if collide(pygame.mouse.get_pos(), self):
+        if self.active and collide(pygame.mouse.get_pos(), self):
             self.image = self.hovered_image
         else:
             self.image = self.basic_image
+        if event is not None and event.type == pygame.MOUSEBUTTONUP and self.active and collide(event.pos, self):
+            self.action()
 
     def update_scale(self, old_scale, new_scale):
         self.basic_image = pygame.image.load(self.imgs_path[0])
@@ -70,20 +76,25 @@ class Button(CordSpriteObject):
 
 
 class ChoiceButton(Button):
-    def __init__(self, imgs, cords, clicked):
+    def __init__(self, imgs, cords, clicked, choice_group, click_args):
         super().__init__(imgs[:2], cords)
         self.imgs_path = imgs
         self.clicked_image = pygame.image.load(self.imgs_path[2])
         self.clicked = clicked
+        self.choice_group = choice_group
+        self.choice_group.add(self)
+        self.click_args = click_args
         if self.clicked:
             self.image = self.clicked_image
 
     def update(self, event=None):
         if self.clicked:
             self.image = self.clicked_image
-
         else:
             super().update()
+
+        if event is not None and not self.clicked and event.type == pygame.MOUSEBUTTONUP and collide(event.pos, self):
+            self.choice_group.on_click(self, *self.click_args)
 
     def update_scale(self, old_scale, new_scale):
         self.basic_image = pygame.image.load(self.imgs_path[0])
@@ -208,24 +219,18 @@ class Arrow(Button):
         self.subfield = subfield
         self.clockwise = clockwise
         self.add(arrow_sprites)
-
-    def click(self):
         if self.clockwise:
-            self.subfield.rotate_clockwise()
+            self.action = self.clockwise_action
         else:
-            self.subfield.rotate_counterclockwise()
+            self.action = self.counterclockwise_action
 
+    def clockwise_action(self):
+        self.subfield.rotate_clockwise()
         self.subfield.field.current_step = 0
 
-    def update(self, event=None):
-        if self.active and collide(pygame.mouse.get_pos(), self):
-            self.image = self.hovered_image
-        else:
-            self.image = self.basic_image
-
-        if event is not None and event.type == pygame.MOUSEBUTTONUP:
-            if self.active and collide(event.pos, self):
-                self.click()
+    def counterclockwise_action(self):
+        self.subfield.rotate_counterclockwise()
+        self.subfield.field.current_step = 0
 
     def __str__(self):
         return f'({"clockwise" if self.clockwise else "counterclockwise"} Arrow of {str(self.subfield)})'
@@ -452,6 +457,24 @@ class Field:
         self.update()
 
 
+class Choice:
+    def __init__(self, action=None, *args):
+        self.buttons = list(args)
+        if action is None:
+            self.action = lambda *args: None
+        else:
+            self.action = action
+
+    def add(self, *args):
+        self.buttons.extend(args)
+
+    def on_click(self, sender, *args):
+        for button in self.buttons:
+            button.clicked = button is sender
+        self.action(*args)
+
+
+
 class Settings:
     def __init__(self, saved_settings=None):
         self.basic_settings = {'width': 600, 'height': 680, 'scale': 1, 'theme': 'basic',
@@ -663,6 +686,40 @@ def add_hovered(filename: str) -> tuple[str, str]:
     return filename, f'{filename.split(".")[0]}_hovered.png'
 
 
+def open_close_settings():
+    global settings_opened
+    if settings_opened:
+        all_sprites.remove(settings_sprites)
+        settings_opened = False
+        field.active = True
+    else:
+        all_sprites.add(settings_sprites)
+        settings_opened = True
+        field.active = False
+
+
+def close_infopanel():
+    global info_panel_opened, settings_opened
+    if not info_panel_opened:
+        return
+    all_sprites.remove(info_sprites)
+    all_sprites.add(restart_button)
+    all_sprites.add(settings_sprites)
+    settings_opened = True
+    info_panel_opened = False
+
+
+def open_infopanel():
+    global settings_opened, info_panel_opened
+    if info_panel_opened:
+        return
+    all_sprites.remove(restart_button)
+    all_sprites.remove(settings_sprites)
+    all_sprites.add(info_sprites)
+    settings_opened = False
+    info_panel_opened = True
+
+
 if __name__ == '__main__':
     # setting up parameters
     try:
@@ -757,36 +814,55 @@ if __name__ == '__main__':
     icon_sprite = SpriteObject(icon_img)
 
     top_panel_sprite = CordSpriteObject(top_panel_img, (CENTER[0], CENTER[1] - CENTER[0] - 40))
-    restart_button = Button(restart_button_imgs, (settings.width - 40, CENTER[1] - CENTER[0] - 40))
-    settings_button = Button(settings_button_imgs, (55, CENTER[1] - CENTER[0] - 40))
+    restart_button = Button(restart_button_imgs,
+                            (settings.width - 40, CENTER[1] - CENTER[0] - 40),
+                            restart)
+    settings_button = Button(settings_button_imgs,
+                             (55, CENTER[1] - CENTER[0] - 40),
+                             open_close_settings)
     pentago_text = CordSpriteObject(pentago_text_img, (CENTER[0], CENTER[1] - CENTER[0] - 40))
-    close_button = Button(close_button_imgs, (settings.width - 40, CENTER[1] - CENTER[0] - 40))
+    close_button = Button(close_button_imgs,
+                          (settings.width - 40, CENTER[1] - CENTER[0] - 40),
+                          close_infopanel)
     info_panel = CordSpriteObject(info_panel_img, CENTER)
 
     settings_panel = CordSpriteObject(settings_panel_img,
                                       (160 * settings.scale, top_panel_sprite.rect.bottom + 152 * settings.scale))
     rules_button = Button(rules_button_imgs,
-                          (settings_panel.rect.center[0], settings_panel.rect.top + 40 * settings.scale))
+                          (settings_panel.rect.center[0], settings_panel.rect.top + 40 * settings.scale),
+                          open_infopanel)
     screen_settings_text = CordSpriteObject(screen_settings_text_img, (settings_panel.rect.center[0],
                                                                        rules_button.rect.bottom + 100 * settings.scale))
     basic_theme_button = CordSpriteObject(basic_theme_button_img,
                                           (70 * settings.scale, screen_settings_text.rect.bottom + 30 * settings.scale))
     pink_theme_button = CordSpriteObject(pink_theme_button_img,
                                          (150 * settings.scale, screen_settings_text.rect.bottom + 30 * settings.scale))
+
+    theme_choice = Choice(settings.update_theme)
     basic_theme_button_frame = ChoiceButton(theme_button_frame_imgs,
                                             (70 * settings.scale,
                                              screen_settings_text.rect.bottom + 30 * settings.scale),
-                                            settings.theme == 'basic')
+                                            settings.theme == 'basic',
+                                            theme_choice,
+                                            ('basic',))
     pink_theme_button_frame = ChoiceButton(theme_button_frame_imgs,
                                            (150 * settings.scale,
                                             screen_settings_text.rect.bottom + 30 * settings.scale),
-                                           settings.theme == 'pale pink')
+                                           settings.theme == 'pale pink',
+                                           theme_choice,
+                                           ('pale pink',))
+
+    resolution_choice = Choice(settings.update_scale)
     resolution_1x_button = ChoiceButton(resolution_button_imgs,
                                         (42 * settings.scale, 247 * settings.scale),
-                                        settings.scale == 1)
+                                        settings.scale == 1,
+                                        resolution_choice,
+                                        (1,))
     resolution_2x_button = ChoiceButton(resolution_button_imgs,
                                         (42 * settings.scale, 277 * settings.scale),
-                                        settings.scale == 2)
+                                        settings.scale == 2,
+                                        resolution_choice,
+                                        (2,))
 
     # setting up icon
     pygame.display.set_icon(icon_sprite.image)
@@ -831,58 +907,7 @@ if __name__ == '__main__':
 
             if event.type == pygame.MOUSEBUTTONUP:
                 cords = pygame.mouse.get_pos()
-
-                if settings_opened or info_panel_opened:
-                    if settings_opened:
-                        if collide(cords, rules_button):
-                            all_sprites.remove(restart_button)
-                            all_sprites.remove(settings_sprites)
-                            all_sprites.add(info_sprites)
-                            settings_opened = False
-                            info_panel_opened = True
-
-                        elif collide(cords, settings_button):
-                            all_sprites.remove(settings_sprites)
-                            settings_opened = False
-                            field.active = True
-
-                        elif collide(cords, resolution_1x_button):
-                            settings.update_scale(1)
-                            resolution_1x_button.clicked = True
-                            resolution_2x_button.clicked = False
-
-                        elif collide(cords, resolution_2x_button):
-                            settings.update_scale(2)
-                            resolution_1x_button.clicked = False
-                            resolution_2x_button.clicked = True
-
-                        elif collide(cords, basic_theme_button_frame):
-                            settings.update_theme('basic')
-                            basic_theme_button_frame.clicked = True
-                            pink_theme_button_frame.clicked = False
-
-                        elif collide(cords, pink_theme_button_frame):
-                            settings.update_theme('pale pink')
-                            basic_theme_button_frame.clicked = False
-                            pink_theme_button_frame.clicked = True
-
-                    if info_panel_opened:
-                        if collide(cords, close_button):
-                            all_sprites.remove(info_sprites)
-                            all_sprites.add(restart_button)
-                            all_sprites.add(settings_sprites)
-                            settings_opened = True
-                            info_panel_opened = False
-
-                else:
-                    if collide(cords, settings_button):
-                        all_sprites.add(settings_sprites)
-                        settings_opened = True
-                        field.active = False
-
-                    if collide(cords, restart_button):
-                        restart()
-
+                if not (info_panel_opened or settings_opened):
                     if field.cross_won:
                         cross_won_sprite.add(all_sprites)
                         restart_sprite.add(all_sprites)
