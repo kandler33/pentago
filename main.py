@@ -3,325 +3,7 @@ import os
 from PIL import Image
 import pickle
 import time
-
-
-class SpriteObject(pygame.sprite.Sprite):
-    def __init__(self, img):
-        super().__init__()
-        self.img_path = img
-        self.image = pygame.image.load(img)
-        self.rect = self.image.get_rect()
-
-    def update_scale(self, old_scale, new_scale):
-        self.image = pygame.image.load(self.img_path)
-
-    def update_theme(self):
-        self.image = pygame.image.load(self.img_path)
-
-
-class CordSpriteObject(SpriteObject):
-    def __init__(self, img, cords):
-        super().__init__(img)
-        self.rect.center = cords
-
-    def set_pos(self, cords):
-        self.rect.center = cords
-
-    def update_scale(self, old_scale, new_scale):
-        self.image = pygame.image.load(self.img_path)
-        old_topleft = self.rect.topleft
-        self.rect = self.image.get_rect()
-        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
-
-    def update_theme(self):
-        self.image = pygame.image.load(self.img_path)
-
-
-class Button(CordSpriteObject):
-    def __init__(self, imgs, cords, action=None):
-        super().__init__(imgs[0], cords)
-        self.active = True
-        self.imgs_path = imgs
-        self.basic_image = pygame.image.load(imgs[0])
-        self.hovered_image = pygame.image.load(imgs[1])
-        self.image = self.basic_image
-        if action is None:
-            self.action = lambda: None
-        else:
-            self.action = action
-
-    def set_active(self, active: bool) -> None:
-        self.active = active
-
-    def update(self, event=None):
-        if self.active and collide(pygame.mouse.get_pos(), self):
-            self.image = self.hovered_image
-        else:
-            self.image = self.basic_image
-        if event is not None and event.type == pygame.MOUSEBUTTONUP and self.active and collide(event.pos, self):
-            self.action()
-
-    def update_scale(self, old_scale, new_scale):
-        self.basic_image = pygame.image.load(self.imgs_path[0])
-        self.hovered_image = pygame.image.load(self.imgs_path[1])
-        self.image = self.basic_image
-        old_topleft = self.rect.topleft
-        self.rect = self.image.get_rect()
-        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
-
-    def update_theme(self):
-        self.basic_image = pygame.image.load(self.imgs_path[0])
-        self.hovered_image = pygame.image.load(self.imgs_path[1])
-        self.image = self.basic_image
-
-
-class ChoiceButton(Button):
-    def __init__(self, imgs, cords, clicked, choice_group, click_args):
-        super().__init__(imgs[:2], cords)
-        self.imgs_path = imgs
-        self.clicked_image = pygame.image.load(self.imgs_path[2])
-        self.clicked = clicked
-        self.choice_group = choice_group
-        self.choice_group.add(self)
-        self.click_args = click_args
-        if self.clicked:
-            self.image = self.clicked_image
-
-    def update(self, event=None):
-        if self.clicked:
-            self.image = self.clicked_image
-        else:
-            super().update()
-
-        if event is not None and not self.clicked and event.type == pygame.MOUSEBUTTONUP and collide(event.pos, self):
-            self.choice_group.on_click(self, *self.click_args)
-
-    def update_scale(self, old_scale, new_scale):
-        self.basic_image = pygame.image.load(self.imgs_path[0])
-        self.hovered_image = pygame.image.load(self.imgs_path[1])
-        self.clicked_image = pygame.image.load(self.imgs_path[2])
-        if self.clicked:
-            self.image = self.clicked_image
-        else:
-            self.image = self.basic_image
-
-        old_topleft = self.rect.topleft
-        self.rect = self.image.get_rect()
-        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
-
-    def update_theme(self):
-        self.basic_image = pygame.image.load(self.imgs_path[0])
-        self.hovered_image = pygame.image.load(self.imgs_path[1])
-        self.clicked_image = pygame.image.load(self.imgs_path[2])
-        if self.clicked:
-            self.image = self.clicked_image
-        else:
-            self.image = self.basic_image
-
-
-class SubField(pygame.sprite.Sprite):
-    def __init__(self, num, img, field):
-        super().__init__(subfield_sprites)
-        self.field = field
-        self.active = False
-        self.img_path = img
-        self.image = pygame.image.load(img)
-        self.rect = self.image.get_rect()
-        self.rect.center = SUBFIELD_CORDS[num]
-        self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
-        for row in self.field_list:
-            all_sprites.add(*row)
-        self.counterclockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][0](SUBFIELD_CORDS[num]),
-                                            arrow_files[num][0], self, False)
-        self.clockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][1](SUBFIELD_CORDS[num]),
-                                     arrow_files[num][1], self, True)
-
-    def add_sign(self, x, y):
-        if type(self.field_list[y][x]) is not Cell:
-            return
-
-        self.field_list[y][x].kill()
-        if self.field.current_sign == 1:
-            self.field_list[y][x] = Cross(self, cross_img, x, y)
-            self.field.current_sign = 0
-        else:
-            self.field_list[y][x] = Zero(self, zero_img, x, y)
-            self.field.current_sign = 1
-        all_sprites.add(self.field_list[y][x])
-        if field.is_any_empty_subfields():
-            self.field.current_step = -1
-        else:
-            self.field.current_step = 1
-
-    def rotate_counterclockwise(self):
-        new_field_list = [[None] * 3, [None] * 3, [None] * 3]
-        for y in range(3):
-            for x in range(3):
-                new_field_list[y][x] = self.field_list[x][2 - y]
-                new_field_list[y][x].change_pos(x, y)
-        self.field_list = new_field_list
-
-    def rotate_clockwise(self):
-        new_field_list = [[None] * 3, [None] * 3, [None] * 3]
-        for y in range(3):
-            for x in range(3):
-                new_field_list[y][x] = self.field_list[2 - x][y]
-                new_field_list[y][x].change_pos(x, y)
-        self.field_list = new_field_list
-
-    def restart(self):
-        for row in self.field_list:
-            for cell in row:
-                cell.kill()
-        self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
-        for row in self.field_list:
-            all_sprites.add(row)
-
-    def hovered(self):
-        pass
-
-    def is_empty(self):
-        return all([all([type(i) is Cell for i in row]) for row in self])
-
-    def update_scale(self, old_scale, new_scale):
-        self.image = pygame.image.load(self.img_path)
-        old_topleft = self.rect.topleft
-        self.rect = self.image.get_rect()
-        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
-
-    def update_theme(self):
-        self.image = pygame.image.load(self.img_path)
-
-    def update(self, event=None):
-        pass
-
-    def set_active(self, active: bool) -> None:
-        print(f'changing {str(self)}.active from {self.active} to {active}')
-        self.active = active
-        for row in self.field_list:
-            for cell in row:
-                cell.set_active(active)
-
-    def set_arrows_active(self, active: bool) -> None:
-        self.counterclockwise_arrow.set_active(active)
-        self.clockwise_arrow.set_active(active)
-
-    def __str__(self):
-        return f'SubField {field.field.index(self)}'
-
-    def __getitem__(self, key):
-        return self.field_list[key]
-
-
-class Arrow(Button):
-    def __init__(self, cords, imgs, subfield, clockwise):
-        super().__init__(imgs, cords)
-        self.subfield = subfield
-        self.clockwise = clockwise
-        self.add(arrow_sprites)
-        if self.clockwise:
-            self.action = self.clockwise_action
-        else:
-            self.action = self.counterclockwise_action
-
-    def clockwise_action(self):
-        self.subfield.rotate_clockwise()
-        self.subfield.field.current_step = 0
-
-    def counterclockwise_action(self):
-        self.subfield.rotate_counterclockwise()
-        self.subfield.field.current_step = 0
-
-    def __str__(self):
-        return f'({"clockwise" if self.clockwise else "counterclockwise"} Arrow of {str(self.subfield)})'
-
-
-class Cell(pygame.sprite.Sprite):
-    def __init__(self, subfield, x, y):
-        super().__init__()
-        self.subfield = subfield
-        self.active = False
-        self.cords = (x, y)
-        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.basic_image.fill(settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.hovered_image.fill(settings.get_color('hovered_color'))
-        self.image = self.basic_image
-        self.rect = self.image.get_rect()
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
-
-    def set_active(self, active: bool) -> None:
-        self.active = active
-
-    def get_cords(self):
-        return self.cords
-
-    def change_pos(self, x, y):
-        self.cords = (x, y)
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
-
-    def update(self, event=None):
-        if self.active and collide(pygame.mouse.get_pos(), self):
-            self.image = self.hovered_image
-        else:
-            self.image = self.basic_image
-
-        if event is not None and event.type == pygame.MOUSEBUTTONUP:
-            if self.active and collide(event.pos, self):
-                self.subfield.add_sign(*self.cords)
-
-    def update_scale(self, *args):
-        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.basic_image.fill(settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.hovered_image.fill(settings.get_color('hovered_color'))
-        self.image = self.basic_image
-
-        self.rect = self.image.get_rect()
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
-
-    def update_theme(self):
-        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.basic_image.fill(settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.hovered_image.fill(settings.get_color('hovered_color'))
-        self.image = self.basic_image
-
-    def __str__(self):
-        return f'(Cell[{self.cords[1]}][{self.cords[0]}] of {str(self.subfield)})'
-
-
-class Sign(Cell):
-    def __init__(self, field, image, x, y):
-        super().__init__(field, x, y)
-        self.img_path = image
-        self.image = pygame.image.load(self.img_path)
-
-    def update(self, event=None):
-        pass
-
-    def update_scale(self, *args):
-        self.image = pygame.image.load(self.img_path)
-
-        self.rect = self.image.get_rect()
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
-
-    def update_theme(self):
-        self.image = pygame.image.load(self.img_path)
-
-
-class Cross(Sign):
-    def __init__(self, field, cross_img, x, y):
-        super().__init__(field, cross_img, x, y)
-
-
-class Zero(Sign):
-    def __init__(self, field, zero_img, x, y):
-        super().__init__(field, zero_img, x, y)
+from typing import Callable, Any, Iterable
 
 
 class Field:
@@ -459,6 +141,340 @@ class Field:
         self.update()
 
 
+class Choice:
+    def __init__(self, action=None, *args):
+        self.buttons = list(args)
+        if action is None:
+            self.action = lambda *args: None
+        else:
+            self.action = action
+
+    def add(self, *args):
+        self.buttons.extend(args)
+
+    def on_click(self, sender, *args):
+        for button in self.buttons:
+            button.clicked = button is sender
+        self.action(*args)
+
+
+class SpriteObject(pygame.sprite.Sprite):
+    def __init__(self, img: str):
+        super().__init__()
+        self.img_path = img
+        self.image = pygame.image.load(img)
+        self.rect = self.image.get_rect()
+
+    def update_scale(self, old_scale: int, new_scale: int) -> None:
+        self.image = pygame.image.load(self.img_path)
+
+    def update_theme(self) -> None:
+        self.image = pygame.image.load(self.img_path)
+
+
+class CordSpriteObject(SpriteObject):
+    def __init__(self, img: str, cords: (int, int)):
+        super().__init__(img)
+        self.rect.center = cords
+
+    def set_pos(self, cords: (int, int)) -> None:
+        self.rect.center = cords
+
+    def update_scale(self, old_scale: int, new_scale: int) -> None:
+        self.image = pygame.image.load(self.img_path)
+        old_topleft = self.rect.topleft
+        self.rect = self.image.get_rect()
+        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
+
+
+class Button(CordSpriteObject):
+    def __init__(self, imgs: (str, str), cords: (int, int), action: Callable = None):
+        super().__init__(imgs[0], cords)
+        self.active = True
+        self.imgs_path = imgs
+        self.basic_image = pygame.image.load(imgs[0])
+        self.hovered_image = pygame.image.load(imgs[1])
+        self.image = self.basic_image
+        if action is None:
+            self.action = lambda: None
+        else:
+            self.action = action
+
+    def set_active(self, active: bool) -> None:
+        self.active = active
+
+    def update(self, event: pygame.event.Event = None) -> None:
+        if self.active and collide(pygame.mouse.get_pos(), self):
+            self.image = self.hovered_image
+        else:
+            self.image = self.basic_image
+        if event is not None and event.type == pygame.MOUSEBUTTONUP and self.active and collide(event.pos, self):
+            self.action()
+
+    def update_scale(self, old_scale: int, new_scale: int) -> None:
+        self.basic_image = pygame.image.load(self.imgs_path[0])
+        self.hovered_image = pygame.image.load(self.imgs_path[1])
+        self.image = self.basic_image
+        old_topleft = self.rect.topleft
+        self.rect = self.image.get_rect()
+        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
+
+    def update_theme(self) -> None:
+        self.basic_image = pygame.image.load(self.imgs_path[0])
+        self.hovered_image = pygame.image.load(self.imgs_path[1])
+        self.image = self.basic_image
+
+
+class ChoiceButton(Button):
+    def __init__(self, imgs: (str, str, str), cords: (int, int), clicked: bool,
+                 choice_group: Choice, click_args: Iterable):
+        super().__init__(imgs[:2], cords)
+        self.imgs_path = imgs
+        self.clicked_image = pygame.image.load(self.imgs_path[2])
+        self.clicked = clicked
+        self.choice_group = choice_group
+        self.choice_group.add(self)
+        self.click_args = click_args
+        if self.clicked:
+            self.image = self.clicked_image
+
+    def update(self, event: pygame.event.Event = None) -> None:
+        if self.clicked:
+            self.image = self.clicked_image
+        else:
+            super().update()
+
+        if event is not None and not self.clicked and event.type == pygame.MOUSEBUTTONUP and collide(event.pos, self):
+            self.choice_group.on_click(self, *self.click_args)
+
+    def update_scale(self, old_scale: int, new_scale: int) -> None:
+        self.basic_image = pygame.image.load(self.imgs_path[0])
+        self.hovered_image = pygame.image.load(self.imgs_path[1])
+        self.clicked_image = pygame.image.load(self.imgs_path[2])
+        if self.clicked:
+            self.image = self.clicked_image
+        else:
+            self.image = self.basic_image
+
+        old_topleft = self.rect.topleft
+        self.rect = self.image.get_rect()
+        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
+
+    def update_theme(self) -> None:
+        self.basic_image = pygame.image.load(self.imgs_path[0])
+        self.hovered_image = pygame.image.load(self.imgs_path[1])
+        self.clicked_image = pygame.image.load(self.imgs_path[2])
+        if self.clicked:
+            self.image = self.clicked_image
+        else:
+            self.image = self.basic_image
+
+
+class SubField(pygame.sprite.Sprite):
+    def __init__(self, num: int, img: str, field: Field):
+        super().__init__(subfield_sprites)
+        self.field = field
+        self.active = False
+        self.img_path = img
+        self.image = pygame.image.load(img)
+        self.rect = self.image.get_rect()
+        self.rect.center = SUBFIELD_CORDS[num]
+        self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
+        for row in self.field_list:
+            all_sprites.add(*row)
+        self.counterclockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][0](SUBFIELD_CORDS[num]),
+                                            arrow_files[num][0], self, False)
+        self.clockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][1](SUBFIELD_CORDS[num]),
+                                     arrow_files[num][1], self, True)
+
+    def add_sign(self, x: int, y: int) -> None:
+        if type(self.field_list[y][x]) is not Cell:
+            return
+
+        self.field_list[y][x].kill()
+        if self.field.current_sign == 1:
+            self.field_list[y][x] = Cross(self, cross_img, x, y)
+            self.field.current_sign = 0
+        else:
+            self.field_list[y][x] = Zero(self, zero_img, x, y)
+            self.field.current_sign = 1
+        all_sprites.add(self.field_list[y][x])
+        if field.is_any_empty_subfields():
+            self.field.current_step = -1
+        else:
+            self.field.current_step = 1
+
+    def rotate_counterclockwise(self) -> None:
+        new_field_list = [[None] * 3, [None] * 3, [None] * 3]
+        for y in range(3):
+            for x in range(3):
+                new_field_list[y][x] = self.field_list[x][2 - y]
+                new_field_list[y][x].change_pos(x, y)
+        self.field_list = new_field_list
+
+    def rotate_clockwise(self) -> None:
+        new_field_list = [[None] * 3, [None] * 3, [None] * 3]
+        for y in range(3):
+            for x in range(3):
+                new_field_list[y][x] = self.field_list[2 - x][y]
+                new_field_list[y][x].change_pos(x, y)
+        self.field_list = new_field_list
+
+    def restart(self) -> None:
+        for row in self.field_list:
+            for cell in row:
+                cell.kill()
+        self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
+        for row in self.field_list:
+            all_sprites.add(row)
+
+    def hovered(self) -> None:
+        pass
+
+    def is_empty(self) -> bool:
+        return all([all([type(i) is Cell for i in row]) for row in self])
+
+    def update_scale(self, old_scale: int, new_scale: int) -> None:
+        self.image = pygame.image.load(self.img_path)
+        old_topleft = self.rect.topleft
+        self.rect = self.image.get_rect()
+        self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
+
+    def update_theme(self) -> None:
+        self.image = pygame.image.load(self.img_path)
+
+    def update(self, event: pygame.event.Event = None) -> None:
+        pass
+
+    def set_active(self, active: bool) -> None:
+        print(f'changing {str(self)}.active from {self.active} to {active}')
+        self.active = active
+        for row in self.field_list:
+            for cell in row:
+                cell.set_active(active)
+
+    def set_arrows_active(self, active: bool) -> None:
+        self.counterclockwise_arrow.set_active(active)
+        self.clockwise_arrow.set_active(active)
+
+    def __str__(self) -> str:
+        return f'SubField {field.field.index(self)}'
+
+    def __getitem__(self, key):
+        return self.field_list[key]
+
+
+class Arrow(Button):
+    def __init__(self, cords, imgs, subfield, clockwise):
+        super().__init__(imgs, cords)
+        self.subfield = subfield
+        self.clockwise = clockwise
+        self.add(arrow_sprites)
+        if self.clockwise:
+            self.action = self.clockwise_action
+        else:
+            self.action = self.counterclockwise_action
+
+    def clockwise_action(self):
+        self.subfield.rotate_clockwise()
+        self.subfield.field.current_step = 0
+
+    def counterclockwise_action(self):
+        self.subfield.rotate_counterclockwise()
+        self.subfield.field.current_step = 0
+
+    def __str__(self):
+        return f'({"clockwise" if self.clockwise else "counterclockwise"} Arrow of {str(self.subfield)})'
+
+
+class Cell(pygame.sprite.Sprite):
+    def __init__(self, subfield, x, y):
+        super().__init__()
+        self.subfield = subfield
+        self.active = False
+        self.cords = (x, y)
+        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
+        self.basic_image.fill(settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
+        self.hovered_image.fill(settings.get_color('hovered_color'))
+        self.image = self.basic_image
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
+                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+
+    def set_active(self, active: bool) -> None:
+        self.active = active
+
+    def get_cords(self):
+        return self.cords
+
+    def change_pos(self, x, y):
+        self.cords = (x, y)
+        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
+                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+
+    def update(self, event=None):
+        if self.active and collide(pygame.mouse.get_pos(), self):
+            self.image = self.hovered_image
+        else:
+            self.image = self.basic_image
+
+        if event is not None and event.type == pygame.MOUSEBUTTONUP:
+            if self.active and collide(event.pos, self):
+                self.subfield.add_sign(*self.cords)
+
+    def update_scale(self, *args):
+        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
+        self.basic_image.fill(settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
+        self.hovered_image.fill(settings.get_color('hovered_color'))
+        self.image = self.basic_image
+
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
+                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+
+    def update_theme(self):
+        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
+        self.basic_image.fill(settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
+        self.hovered_image.fill(settings.get_color('hovered_color'))
+        self.image = self.basic_image
+
+    def __str__(self):
+        return f'(Cell[{self.cords[1]}][{self.cords[0]}] of {str(self.subfield)})'
+
+
+class Sign(Cell):
+    def __init__(self, field, image, x, y):
+        super().__init__(field, x, y)
+        self.img_path = image
+        self.image = pygame.image.load(self.img_path)
+
+    def update(self, event=None):
+        pass
+
+    def update_scale(self, *args):
+        self.image = pygame.image.load(self.img_path)
+
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
+                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+
+    def update_theme(self):
+        self.image = pygame.image.load(self.img_path)
+
+
+class Cross(Sign):
+    def __init__(self, field, cross_img, x, y):
+        super().__init__(field, cross_img, x, y)
+
+
+class Zero(Sign):
+    def __init__(self, field, zero_img, x, y):
+        super().__init__(field, zero_img, x, y)
+
+
 class Panel:
     def __init__(self):
         self.sprite_group = pygame.sprite.Group()
@@ -523,25 +539,6 @@ class InfoPanel(Panel):
         all_sprites.remove(self.sprite_group)
         all_sprites.add(restart_button)
         field.active = True
-
-
-
-
-class Choice:
-    def __init__(self, action=None, *args):
-        self.buttons = list(args)
-        if action is None:
-            self.action = lambda *args: None
-        else:
-            self.action = action
-
-    def add(self, *args):
-        self.buttons.extend(args)
-
-    def on_click(self, sender, *args):
-        for button in self.buttons:
-            button.clicked = button is sender
-        self.action(*args)
 
 
 class Settings:
