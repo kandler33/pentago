@@ -137,7 +137,7 @@ class SubField(pygame.sprite.Sprite):
                                      arrow_files[num][1], self, True)
 
     def add_sign(self, x, y):
-        if type(self.field_list[y][x]) != Cell:
+        if type(self.field_list[y][x]) is not Cell:
             return
 
         self.field_list[y][x].kill()
@@ -181,7 +181,7 @@ class SubField(pygame.sprite.Sprite):
         pass
 
     def is_empty(self):
-        return all([all([type(i) == Cell for i in row]) for row in self])
+        return all([all([type(i) is Cell for i in row]) for row in self])
 
     def update_scale(self, old_scale, new_scale):
         self.image = pygame.image.load(self.img_path)
@@ -401,14 +401,16 @@ class Field:
             if [type_field[i][j] for j in range(5)].count(Cross) == 5 or [type_field[i][j] for j in range(1, 6)].count(
                     Cross) == 5:
                 self.cross_won = True
-            if [type_field[i][j] for j in range(5)].count(Zero) == 5 or [type_field[i][j] for j in range(1, 6)].count(Zero) == 5:
+            if ([type_field[i][j] for j in range(5)].count(Zero) == 5 or
+                    [type_field[i][j] for j in range(1, 6)].count(Zero) == 5):
                 self.zero_won = True
 
             # vertical
-            if [type_field[j][i] for j in range(5)].count(Cross) == 5 or [type_field[j][i] for j in range(1, 6)].count(
-                    Cross) == 5:
+            if ([type_field[j][i] for j in range(5)].count(Cross) == 5 or
+                    [type_field[j][i] for j in range(1, 6)].count(Cross) == 5):
                 self.cross_won = True
-            if [type_field[j][i] for j in range(5)].count(Zero) == 5 or [type_field[j][i] for j in range(1, 6)].count(Zero) == 5:
+            if ([type_field[j][i] for j in range(5)].count(Zero) == 5 or
+                    [type_field[j][i] for j in range(1, 6)].count(Zero) == 5):
                 self.zero_won = True
 
         # main diagonals
@@ -457,6 +459,74 @@ class Field:
         self.update()
 
 
+class Panel:
+    def __init__(self):
+        self.sprite_group = pygame.sprite.Group()
+        self._active = False
+
+    @property
+    def active(self):
+        return self._active
+
+    @active.setter
+    def active(self, active):
+        self._active = active
+        if self.active:
+            self.open()
+        else:
+            self.close()
+
+    def add(self, *args):
+        self.sprite_group.add(*args)
+
+    def open(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class SettingsPanel(Panel):
+    def __init__(self):
+        super().__init__()
+
+    def button_action(self):
+        self.active = not self.active
+
+    def open(self):
+        all_sprites.add(self.sprite_group)
+        info_panel.active = False
+        field.active = False
+
+    def close(self):
+        all_sprites.remove(self.sprite_group)
+        field.active = True
+
+
+class InfoPanel(Panel):
+    def __init__(self):
+        super().__init__()
+
+    def open_button_action(self):
+        self.active = True
+
+    def close_button_action(self):
+        self.active = False
+
+    def open(self):
+        all_sprites.add(self.sprite_group)
+        all_sprites.remove(restart_button)
+        settings_panel.active = False
+        field.active = False
+
+    def close(self):
+        all_sprites.remove(self.sprite_group)
+        all_sprites.add(restart_button)
+        field.active = True
+
+
+
+
 class Choice:
     def __init__(self, action=None, *args):
         self.buttons = list(args)
@@ -472,7 +542,6 @@ class Choice:
         for button in self.buttons:
             button.clicked = button is sender
         self.action(*args)
-
 
 
 class Settings:
@@ -662,7 +731,7 @@ def update_screen_scale(old_scale: int, new_scale: int) -> None:
     pygame.display.set_mode((settings.width, settings.height))
 
     all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, all_sprites))
-    all_sprites_list.sort(key=lambda x: type(x) != SubField)
+    all_sprites_list.sort(key=lambda x: type(x) is not SubField)
 
     for sprite in all_sprites_list:
         sprite.update_scale(old_scale, new_scale)
@@ -672,7 +741,7 @@ def update_screen_theme():
     """Updates all sprites with current theme setting"""
 
     all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, all_sprites))
-    all_sprites_list.sort(key=lambda x: type(x) != SubField)
+    all_sprites_list.sort(key=lambda x: type(x) is not SubField)
 
     for sprite in all_sprites_list:
         sprite.update_theme()
@@ -684,40 +753,6 @@ def create_path(filename: str) -> str:
 
 def add_hovered(filename: str) -> tuple[str, str]:
     return filename, f'{filename.split(".")[0]}_hovered.png'
-
-
-def open_close_settings():
-    global settings_opened
-    if settings_opened:
-        all_sprites.remove(settings_sprites)
-        settings_opened = False
-        field.active = True
-    else:
-        all_sprites.add(settings_sprites)
-        settings_opened = True
-        field.active = False
-
-
-def close_infopanel():
-    global info_panel_opened, settings_opened
-    if not info_panel_opened:
-        return
-    all_sprites.remove(info_sprites)
-    all_sprites.add(restart_button)
-    all_sprites.add(settings_sprites)
-    settings_opened = True
-    info_panel_opened = False
-
-
-def open_infopanel():
-    global settings_opened, info_panel_opened
-    if info_panel_opened:
-        return
-    all_sprites.remove(restart_button)
-    all_sprites.remove(settings_sprites)
-    all_sprites.add(info_sprites)
-    settings_opened = False
-    info_panel_opened = True
 
 
 if __name__ == '__main__':
@@ -806,6 +841,9 @@ if __name__ == '__main__':
     screen_settings_text_img = create_path('screen_settings_text.png')
     settings_panel_img = create_path('settings_panel.png')
 
+    settings_panel = SettingsPanel()
+    info_panel = InfoPanel()
+
     # creating sprites
     cross_won_sprite = CordSpriteObject(x_won_text_img, (CENTER[0], CENTER[1] - 100))
     zero_won_sprite = CordSpriteObject(o_won_text_img, (CENTER[0], CENTER[1] - 100))
@@ -819,19 +857,19 @@ if __name__ == '__main__':
                             restart)
     settings_button = Button(settings_button_imgs,
                              (55, CENTER[1] - CENTER[0] - 40),
-                             open_close_settings)
+                             settings_panel.button_action)
     pentago_text = CordSpriteObject(pentago_text_img, (CENTER[0], CENTER[1] - CENTER[0] - 40))
     close_button = Button(close_button_imgs,
                           (settings.width - 40, CENTER[1] - CENTER[0] - 40),
-                          close_infopanel)
-    info_panel = CordSpriteObject(info_panel_img, CENTER)
+                          info_panel.close_button_action)
+    info_panel_sprite = CordSpriteObject(info_panel_img, CENTER)
 
-    settings_panel = CordSpriteObject(settings_panel_img,
+    settings_panel_sprite = CordSpriteObject(settings_panel_img,
                                       (160 * settings.scale, top_panel_sprite.rect.bottom + 152 * settings.scale))
     rules_button = Button(rules_button_imgs,
-                          (settings_panel.rect.center[0], settings_panel.rect.top + 40 * settings.scale),
-                          open_infopanel)
-    screen_settings_text = CordSpriteObject(screen_settings_text_img, (settings_panel.rect.center[0],
+                          (settings_panel_sprite.rect.center[0], settings_panel_sprite.rect.top + 40 * settings.scale),
+                          info_panel.open_button_action)
+    screen_settings_text = CordSpriteObject(screen_settings_text_img, (settings_panel_sprite.rect.center[0],
                                                                        rules_button.rect.bottom + 100 * settings.scale))
     basic_theme_button = CordSpriteObject(basic_theme_button_img,
                                           (70 * settings.scale, screen_settings_text.rect.bottom + 30 * settings.scale))
@@ -868,8 +906,6 @@ if __name__ == '__main__':
     pygame.display.set_icon(icon_sprite.image)
 
     # creating groups
-    settings_sprites = pygame.sprite.Group()
-    info_sprites = pygame.sprite.Group()
     top_panel_sprites = pygame.sprite.Group()
     subfield_sprites = pygame.sprite.Group()
     arrow_sprites = pygame.sprite.Group()
@@ -881,16 +917,16 @@ if __name__ == '__main__':
 
     # creating field
     top_panel_sprites.add(top_panel_sprite, restart_button, settings_button, pentago_text)
-    info_sprites.add(info_panel, close_button)
-    settings_sprites.add(settings_panel, rules_button, screen_settings_text, basic_theme_button, pink_theme_button,
+    info_panel.add(info_panel_sprite, close_button)
+    settings_panel.add(settings_panel_sprite, rules_button, screen_settings_text, basic_theme_button, pink_theme_button,
                          resolution_1x_button, resolution_2x_button, basic_theme_button_frame, pink_theme_button_frame)
 
     all_sprites.add(subfield_sprites, arrow_sprites, top_panel_sprites)
     all_sprites_list.extend(subfield_sprites)
     all_sprites_list.extend(arrow_sprites)
     all_sprites_list.extend(top_panel_sprites)
-    all_sprites_list.extend(info_sprites)
-    all_sprites_list.extend(settings_sprites)
+    all_sprites_list.extend(info_panel.sprite_group)
+    all_sprites_list.extend(settings_panel.sprite_group)
 
     restart()
 
