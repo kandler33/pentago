@@ -542,11 +542,10 @@ def collide(cords, obj):
 
 def restart():
     global field, text_sprites
-    global game_active, info_panel_opened, settings_opened
+    global info_panel_opened, settings_opened
     for sprite in text_sprites:
         sprite.kill()
 
-    game_active = True
     info_panel_opened = False
     settings_opened = False
     field.restart()
@@ -919,7 +918,7 @@ if __name__ == '__main__':
                     settings.update_theme('basic')
 
                 # restart after finish
-                if not (game_active or settings_opened or info_panel_opened):
+                if not (field.active or settings_opened or info_panel_opened):
                     if pygame.key.get_pressed()[pygame.K_SPACE]:
                         restart()
 
