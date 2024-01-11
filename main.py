@@ -3,19 +3,65 @@ import os
 from PIL import Image
 import pickle
 import time
-from typing import Callable, Any, Iterable
+from typing import Callable, Any, Iterable, Tuple
 
 
 class Field:
-    def __init__(self):
-        self.field = [SubField(i, subfield_img, self)
-                      for i in range(4)]
+    def __init__(self, parent):
+        self.parent = parent
         self._active = False
         self._current_step = 0
         self.current_sign = 0
         self.cross_won = False
         self.zero_won = False
         self.draw = False
+        self.center = self.parent.settings.field_center()
+        subfield_center_dist = self.parent.settings.subfield_center_distance()
+        self.subfield_cords = ((self.center[0] - subfield_center_dist, self.center[1] - subfield_center_dist),
+                               (self.center[0] + subfield_center_dist, self.center[1] - subfield_center_dist),
+                               (self.center[0] - subfield_center_dist, self.center[1] + subfield_center_dist),
+                               (self.center[0] + subfield_center_dist, self.center[1] + subfield_center_dist)
+                               )
+        self.arrow_cords_from_subfield_cords = ((lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1]),
+                                                 lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25))),
+                                                (lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25)),
+                                                 lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1])),
+                                                (lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)),
+                                                 lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1])),
+                                                (lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1]),
+                                                 lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)))
+                                                )
+        self.sign_cords = (self.parent.settings.grid_width, 2 * self.parent.settings.grid_width + self.parent.settings.cell_width,
+                           3 * self.parent.settings.grid_width + 2 * self.parent.settings.cell_width)
+
+
+    def sprites_init(self):
+        arrow_filenames = (('arrow_left_up_lefter.png', 'arrow_left_up_upper.png'),
+                           ('arrow_right_up_upper.png', 'arrow_right_up_righter.png'),
+                           ('arrow_left_down_downer.png', 'arrow_left_down_lefter.png'),
+                           ('arrow_right_down_righter.png', 'arrow_right_down_downer.png'))
+        self.arrow_files = tuple(tuple(self.parent.create_img_path(self.parent.add_hovered(filename))
+                                       for filename in filenames)
+                                 for filenames in arrow_filenames)
+
+        self.cross_won_sprite = CordSpriteObject(self.parent.create_img_path('x_won_text.png'),
+                                                 (self.center[0], self.center[1] - 100))
+        self.zero_won_sprite = CordSpriteObject(self.parent.create_img_path('o_won_text.png'),
+                                                (self.center[0], self.center[1] - 100))
+        self.draw_sprite = CordSpriteObject(self.parent.create_img_path,
+                                            (self.center[0], self.center[1] - 100))
+        self.restart_sprite = CordSpriteObject(self.parent.create_img_path('restart_text.png'),
+                                               (self.center[0], self.center[1] + 100))
+        self.text_sprites = pygame.sprite.Group(self.cross_won_sprite, self.zero_won_sprite,
+                                                self.draw_sprite, self.restart_sprite)
+        self.field = [SubField(i, self) for i in range(4)]
+        self.parent.all_sprites.add(self.field)
+        for subfield in self.field:
+            for row in subfield:
+                self.parent.all_sprites.add(*row)
+                self.parent.all_sprites_list.extend(row)
+            self.parent.all_sprites.add(subfield.counterclockwise_arrow, subfield.clockwise_arrow)
+            self.parent.all_sprites_list.extend((subfield.counterclockwise_arrow, subfield.clockwise_arrow))
 
     @property
     def active(self):
@@ -66,6 +112,13 @@ class Field:
 
         if self.cross_won or self.zero_won or self.draw:
             self.active = False
+            self.parent.all_sprites.add(self.restart_sprite)
+            if self.cross_won:
+                self.parent.all_sprites.add(self.cross_won_sprite)
+            elif self.zero_won:
+                self.parent.all_sprites.add(self.zero_won_sprite)
+            else:
+                self.parent.all_sprites.add(self.draw_sprite)
 
     def set_subfields_active(self, active: bool) -> None:
         for subfield in self.field:
@@ -130,6 +183,7 @@ class Field:
             self.draw = True
 
     def restart(self):
+        self.parent.all_sprites.remove(self.text_sptites)
         for subfield in self.field:
             subfield.restart()
         self.cross_won = False
@@ -139,6 +193,9 @@ class Field:
         self.current_step = 0
         self.active = True
         self.update()
+
+    def get_conditions(self):
+        return self.cross_won, self.zero_won, self.draw
 
 
 class Choice:
@@ -199,6 +256,9 @@ class Button(CordSpriteObject):
             self.action = lambda: None
         else:
             self.action = action
+
+    def connect(self, action: Callable) -> None:
+        self.action = action
 
     def set_active(self, active: bool) -> None:
         self.active = active
@@ -271,21 +331,19 @@ class ChoiceButton(Button):
 
 
 class SubField(pygame.sprite.Sprite):
-    def __init__(self, num: int, img: str, field: Field):
-        super().__init__(subfield_sprites)
+    def __init__(self, num: int, field: Field):
+        super().__init__()
         self.field = field
         self.active = False
-        self.img_path = img
-        self.image = pygame.image.load(img)
+        self.img_path = field.parent.create_img_path('subfield.png')
+        self.image = pygame.image.load(self.img_path)
         self.rect = self.image.get_rect()
         self.rect.center = SUBFIELD_CORDS[num]
         self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
-        for row in self.field_list:
-            all_sprites.add(*row)
-        self.counterclockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][0](SUBFIELD_CORDS[num]),
-                                            arrow_files[num][0], self, False)
-        self.clockwise_arrow = Arrow(ARROW_CORDS_OPERATIONS[num][1](SUBFIELD_CORDS[num]),
-                                     arrow_files[num][1], self, True)
+        self.counterclockwise_arrow = Arrow(field.arrow_cords_from_subfield_cords[num][0](field.subfield_cords[num]),
+                                            field.arrow_files[num][0], self, False)
+        self.clockwise_arrow = Arrow(field.arrow_cords_from_subfield_cords[num][1](field.subfield_cords[num]),
+                                     field.arrow_files[num][1], self, True)
 
     def add_sign(self, x: int, y: int) -> None:
         if type(self.field_list[y][x]) is not Cell:
@@ -293,12 +351,12 @@ class SubField(pygame.sprite.Sprite):
 
         self.field_list[y][x].kill()
         if self.field.current_sign == 1:
-            self.field_list[y][x] = Cross(self, cross_img, x, y)
+            self.field_list[y][x] = Cross(self, x, y)
             self.field.current_sign = 0
         else:
-            self.field_list[y][x] = Zero(self, zero_img, x, y)
+            self.field_list[y][x] = Zero(self, x, y)
             self.field.current_sign = 1
-        all_sprites.add(self.field_list[y][x])
+        self.field.parent.all_sprites.add(self.field_list[y][x])
         if field.is_any_empty_subfields():
             self.field.current_step = -1
         else:
@@ -326,7 +384,7 @@ class SubField(pygame.sprite.Sprite):
                 cell.kill()
         self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
         for row in self.field_list:
-            all_sprites.add(row)
+            field.parent.all_sprites.add(*row)
 
     def hovered(self) -> None:
         pass
@@ -369,7 +427,6 @@ class Arrow(Button):
         super().__init__(imgs, cords)
         self.subfield = subfield
         self.clockwise = clockwise
-        self.add(arrow_sprites)
         if self.clockwise:
             self.action = self.clockwise_action
         else:
@@ -393,14 +450,15 @@ class Cell(pygame.sprite.Sprite):
         self.subfield = subfield
         self.active = False
         self.cords = (x, y)
-        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.basic_image.fill(settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.hovered_image.fill(settings.get_color('hovered_color'))
+        self.basic_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
+        self.basic_image.fill(game.settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
+        self.hovered_image.fill(game.settings.get_color('hovered_color'))
         self.image = self.basic_image
         self.rect = self.image.get_rect()
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+        self.rect.topleft = (self.subfield.rect.topleft[0] + game.field.sign_cords[self.cords[0]],
+                             self.subfield.rect.topleft[1] + game.field.sign_cords[self.cords[1]])
+        game.all_sprites_list.append(self)
 
     def set_active(self, active: bool) -> None:
         self.active = active
@@ -424,10 +482,10 @@ class Cell(pygame.sprite.Sprite):
                 self.subfield.add_sign(*self.cords)
 
     def update_scale(self, *args):
-        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.basic_image.fill(settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.hovered_image.fill(settings.get_color('hovered_color'))
+        self.basic_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
+        self.basic_image.fill(game.settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
+        self.hovered_image.fill(game.settings.get_color('hovered_color'))
         self.image = self.basic_image
 
         self.rect = self.image.get_rect()
@@ -435,10 +493,10 @@ class Cell(pygame.sprite.Sprite):
                              self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
 
     def update_theme(self):
-        self.basic_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.basic_image.fill(settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((settings.cell_width, settings.cell_width))
-        self.hovered_image.fill(settings.get_color('hovered_color'))
+        self.basic_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
+        self.basic_image.fill(game.settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
+        self.hovered_image.fill(game.settings.get_color('hovered_color'))
         self.image = self.basic_image
 
     def __str__(self):
@@ -466,17 +524,18 @@ class Sign(Cell):
 
 
 class Cross(Sign):
-    def __init__(self, field, cross_img, x, y):
-        super().__init__(field, cross_img, x, y)
+    def __init__(self, field, x, y):
+        super().__init__(field, game.create_img_path('cross.png'), x, y)
 
 
 class Zero(Sign):
-    def __init__(self, field, zero_img, x, y):
-        super().__init__(field, zero_img, x, y)
+    def __init__(self, field, x, y):
+        super().__init__(field, game.create_img_path('zero.png'), x, y)
 
 
 class Panel:
-    def __init__(self):
+    def __init__(self, parent):
+        self.parent = parent
         self.sprite_group = pygame.sprite.Group()
         self._active = False
 
@@ -496,32 +555,89 @@ class Panel:
         self.sprite_group.add(*args)
 
     def open(self):
-        pass
+        self.parent.all_sprites.add(self.sprite_group)
 
     def close(self):
-        pass
+        self.parent.all_sprites.remove(self.sprite_group)
 
 
 class SettingsPanel(Panel):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent):
+        super().__init__(parent)
+        settings_panel_sprite = CordSpriteObject(self.parent.create_img_path('settings_panel.png'),
+                                                 (160 * self.parent.settings.scale,
+                                                  self.parent.top_panel.top_panel_sprite.rect.bottom +
+                                                  152 * self.parent.settings.scale))
+        rules_button = Button(parent.create_img_path(self.parent.add_hovered('rules_button.png')),
+                              (settings_panel_sprite.rect.center[0],
+                               settings_panel_sprite.rect.top + 40 * self.parent.settings.scale),
+                               self.rules_button_action)
+        screen_settings_text = CordSpriteObject(parent.create_img_path('screen_settings_text.png'),
+                                                (settings_panel_sprite.rect.center[0],
+                                                 rules_button.rect.bottom + 100 * self.parent.settings.scale))
+        basic_theme_button = CordSpriteObject(self.parent.create_img_path('basic_theme_button.png'),
+                                              (70 * self.parent.settings.scale,
+                                               screen_settings_text.rect.bottom + 30 * self.parent.settings.scale))
+        pink_theme_button = CordSpriteObject(self.parent.create_img_path('pink_theme_button.png'),
+                                             (150 * self.parent.settings.scale,
+                                              screen_settings_text.rect.bottom + 30 * self.parent.settings.scale))
+
+        theme_choice = Choice(self.parent.settings.update_theme)
+        basic_theme_button_frame = ChoiceButton(
+            parent.create_img_path(parent.add_hovered_clicked('theme_button_frame.png')),
+            (70 * game.settings.scale, screen_settings_text.rect.bottom + 30 * game.settings.scale),
+            game.settings.theme == 'basic',
+            theme_choice,
+            ('basic',))
+        pink_theme_button_frame = ChoiceButton(parent.create_img_path(parent.add_hovered_clicked('theme_button_frame.png')),
+                                               (150 * game.settings.scale,
+                                                screen_settings_text.rect.bottom + 30 * game.settings.scale),
+                                               game.settings.theme == 'pale pink',
+                                               theme_choice,
+                                               ('pale pink',))
+        resolution_choice = Choice(game.settings.update_scale)
+        resolution_1x_button = ChoiceButton(parent.create_img_path(parent.add_hovered_clicked('resolution_button.png')),
+                                            (42 * game.settings.scale, 247 * game.settings.scale),
+                                            game.settings.scale == 1,
+                                            resolution_choice,
+                                            (1,))
+        resolution_2x_button = ChoiceButton(parent.create_img_path(parent.add_hovered_clicked('resolution_button.png')),
+                                            (42 * game.settings.scale, 277 * game.settings.scale),
+                                            game.settings.scale == 2,
+                                            resolution_choice,
+                                            (2,))
+        self.add(settings_panel_sprite, rules_button, screen_settings_text, basic_theme_button,
+                 pink_theme_button, resolution_1x_button, resolution_2x_button,
+                 basic_theme_button_frame, pink_theme_button_frame)
+        self.parent.all_sprites_list.extend(self.sprite_group)
+
+    def rules_button_action(self):
+        self.parent.info_panel.open_button_action()
 
     def button_action(self):
         self.active = not self.active
 
     def open(self):
-        all_sprites.add(self.sprite_group)
-        info_panel.active = False
+        super().open()
+        game.info_panel.active = False
         field.active = False
 
     def close(self):
-        all_sprites.remove(self.sprite_group)
+        super().close()
         field.active = True
 
 
 class InfoPanel(Panel):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent):
+        super().__init__(parent)
+        info_panel_sprite = CordSpriteObject(game.create_img_path('rules.png'),
+                                             game.field.center)
+        close_button = Button(game.create_img_path(game.add_hovered('close_button.png')),
+                              (game.settings.width - 40, game.field.center[1] - game.field.center[0] - 40),
+                              self.close_button_action)
+        self.add(info_panel_sprite, close_button)
+        self.parent.all_sprites_list.extend(self.sprite_group)
+
 
     def open_button_action(self):
         self.active = True
@@ -530,15 +646,39 @@ class InfoPanel(Panel):
         self.active = False
 
     def open(self):
-        all_sprites.add(self.sprite_group)
-        all_sprites.remove(restart_button)
-        settings_panel.active = False
+        super().open()
+        game.all_sprites.remove(game.top_panel.restart_button)
+        game.settings_panel.active = False
         field.active = False
 
     def close(self):
-        all_sprites.remove(self.sprite_group)
-        all_sprites.add(restart_button)
+        super().close()
+        game.all_sprites.add(game.top_panel.restart_button)
         field.active = True
+
+
+class TopPanel(Panel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.top_panel_sprite = CordSpriteObject(self.parent.create_img_path('top_panel.png'),
+                                            (self.parent.field.center[0],
+                                             self.parent.field.center[1] - self.parent.field.center[0] - 40))
+        restart_button = Button(self.parent.create_img_path(self.parent.add_hovered('restart_button.png')),
+                                (self.parent.settings.width - 40,
+                                 self.parent.field.center[1] - self.parent.field.center[0] - 40),
+                                self.parent.restart)
+        settings_button = Button(self.parent.create_img_path(self.parent.add_hovered('settings_button.png')),
+                                 (55, self.parent.field.center[1] - self.parent.field.center[0] - 40),
+                                 self.settings_button_action)
+        pentago_text = CordSpriteObject(self.parent.create_img_path('pentago_text.png'),
+                                        (self.parent.field.center[0],
+                                         self.parent.field.center[1] - self.parent.field.center[0] - 40))
+        self.add(self.top_panel_sprite, restart_button, settings_button, pentago_text)
+        self.active = True
+        self.parent.all_sprites_list.extend(self.sprite_group)
+
+    def settings_button_action(self):
+        self.parent.settings_panel.button_action()
 
 
 class Settings:
@@ -595,6 +735,117 @@ class Settings:
     def back_to_default(self):
         self.update_scale(1)
         self.update_theme('basic')
+
+    def field_center(self):
+        return self.width // 2, self.width // 2 + 80 * self.scale
+
+    def subfield_center_distance(self):
+        return int(self.grid_width * 2.5 + self.cell_width * 1.5)
+
+
+class Pentago:
+    def __init__(self):
+        try:
+            with open('settings.pkl', 'rb') as file:
+                self.settings = pickle.load(file)
+        except FileNotFoundError:
+            self.settings = Settings()
+
+        update_images(self.settings.get_color_palet(), self.settings.scale)
+
+        # creating game and window
+        pygame.init()
+        pygame.mixer.init()
+        self.screen = pygame.display.set_mode((self.settings.width, self.settings.height))
+        pygame.display.set_caption("")
+        self.clock = pygame.time.Clock()
+
+        # loading images
+        self.folder = os.path.dirname(__file__)
+        self.img_folder = os.path.join(self.folder, 'pentago_img')
+
+        # creating groups
+        self.all_sprites = pygame.sprite.Group()
+        self.all_sprites_list = []
+
+        self.field = Field(self)
+        self.top_panel = TopPanel(self)
+        self.settings_panel = SettingsPanel(self)
+        self.info_panel = InfoPanel(self)
+
+        # setting up icon
+        icon_sprite = SpriteObject(self.create_img_path('icon.png'))
+        pygame.display.set_icon(icon_sprite.image)
+
+        self.FPS = 30
+
+    def create_img_path(self, filenames: str | Iterable[str]) -> str | tuple[str, ...]:
+        if type(filenames) is str:
+            return os.path.join(self.img_folder, filenames)
+        return tuple(os.path.join(self.img_folder, filename) for filename in filenames)
+
+    @staticmethod
+    def add_hovered(filename: str) -> tuple[str, str]:
+        return filename, f'{filename.split(".")[0]}_hovered.png'
+
+    @staticmethod
+    def add_hovered_clicked(filename: str) -> tuple[str, str, str]:
+        return filename, f'{filename.split(".")[0]}_hovered.png', f'{filename.split(".")[0]}_clicked.png'
+
+    def restart(self):
+        self.info_panel.active = False
+        self.settings_panel.active = False
+        field.restart()
+
+    def run(self):
+        self.restart()
+
+        running = True
+        while running:
+            self.clock.tick(self.FPS)
+            for event in pygame.event.get():
+                # check for closing window
+                if event.type == pygame.QUIT:
+                    with open('settings.pkl', 'wb') as file:
+                        pickle.dump(self.settings, file)
+                    running = False
+
+                self.all_sprites.update(event)
+                if event.type == pygame.KEYDOWN:
+
+                    # debug settings changing
+                    if pygame.key.get_pressed()[pygame.K_HOME]:
+                        self.settings.back_to_default()
+                        with open('settings.pkl', 'wb') as file:
+                            pickle.dump(self.settings, file)
+                        running = False
+
+                    if pygame.key.get_pressed()[pygame.K_2]:
+                        self.settings.update_scale(2)
+
+                    if pygame.key.get_pressed()[pygame.K_1]:
+                        self.settings.update_scale(1)
+
+                    if pygame.key.get_pressed()[pygame.K_p]:
+                        self.settings.update_theme('pale pink')
+
+                    if pygame.key.get_pressed()[pygame.K_b]:
+                        self.settings.update_theme('basic')
+
+                    # restart after finish
+                    if any(self.field.get_conditions()):
+                        if pygame.key.get_pressed()[pygame.K_SPACE]:
+                            restart()
+
+            # update
+            self.all_sprites.update()
+
+            # render
+            self.screen.fill(self.settings.get_color('background_color'))
+            self.all_sprites.draw(self.screen)
+
+            # return to display
+            pygame.display.flip()
 
 
 def split_by_len(obj, num):
@@ -667,7 +918,7 @@ def update_images(new_colors=None, scale=1) -> None:
     for filename in os.listdir(base_img_folder):
         if os.path.isfile(os.path.join(base_img_folder, filename)):
             with Image.open(os.path.join(base_img_folder, filename)).convert('RGBA') as base_img:
-                new_img = Image.new('RGBA', tuple(i * scale for i in base_img.size))
+                new_img = Image.new('RGBA', (base_img.width * scale, base_img.height * scale))
                 data = tuple(split_by_len(tuple(base_img.getdata()), base_img.width))
                 new_data = tuple(scaled_data_gen(data, scale))
                 new_img.putdata(new_data)
@@ -679,7 +930,7 @@ def update_images(new_colors=None, scale=1) -> None:
             coef = 2
         if os.path.isfile(os.path.join(themeable_folder, filename)):
             with Image.open(os.path.join(themeable_folder, filename)).convert('RGBA') as base_img:
-                new_img = Image.new('RGBA', tuple(i * scale * coef for i in base_img.size))
+                new_img = Image.new('RGBA', (base_img.width * scale * coef, base_img.height * scale * coef))
                 data = tuple(split_by_len(tuple(base_img.getdata()), base_img.width))
                 new_data = tuple(map(lambda x: palet.get(x, (255, 255, 255, 0)), scaled_data_gen(data, scale * coef)))
                 new_img.putdata(new_data)
@@ -705,8 +956,8 @@ def update_screen_scale(old_scale: int, new_scale: int) -> None:
     """Updates screen and all sprites with current scale setting"""
 
     global CENTER, SUBFIELD_CORDS, ARROW_CORDS_OPERATIONS, SIGN_CORDS, all_sprites_list
-    CENTER = (settings.width // 2, settings.width // 2 + 80 * settings.scale)
-    CENTER_SUBFIELD_CENTER_DIST = int(settings.grid_width * 2.5 + settings.cell_width * 1.5)
+    CENTER = (game.settings.width // 2, game.settings.width // 2 + 80 * game.settings.scale)
+    CENTER_SUBFIELD_CENTER_DIST = int(game.settings.grid_width * 2.5 + game.settings.cell_width * 1.5)
     SUBFIELD_CORDS = ((CENTER[0] - CENTER_SUBFIELD_CENTER_DIST, CENTER[1] - CENTER_SUBFIELD_CENTER_DIST),
                       (CENTER[0] + CENTER_SUBFIELD_CENTER_DIST, CENTER[1] - CENTER_SUBFIELD_CENTER_DIST),
                       (CENTER[0] - CENTER_SUBFIELD_CENTER_DIST, CENTER[1] + CENTER_SUBFIELD_CENTER_DIST),
@@ -722,12 +973,12 @@ def update_screen_scale(old_scale: int, new_scale: int) -> None:
                                lambda cords: (cords[0], cords[1] + (CENTER_SUBFIELD_CENTER_DIST + 25)))
                               )
 
-    SIGN_CORDS = (settings.grid_width, 2 * settings.grid_width + settings.cell_width,
-                  3 * settings.grid_width + 2 * settings.cell_width)
+    SIGN_CORDS = (game.settings.grid_width, 2 * game.settings.grid_width + game.settings.cell_width,
+                  3 * game.settings.grid_width + 2 * game.settings.cell_width)
 
-    pygame.display.set_mode((settings.width, settings.height))
+    pygame.display.set_mode((game.settings.width, game.settings.height))
 
-    all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, all_sprites))
+    all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, game.all_sprites))
     all_sprites_list.sort(key=lambda x: type(x) is not SubField)
 
     for sprite in all_sprites_list:
@@ -737,257 +988,14 @@ def update_screen_scale(old_scale: int, new_scale: int) -> None:
 def update_screen_theme():
     """Updates all sprites with current theme setting"""
 
-    all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, all_sprites))
+    all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, game.all_sprites))
     all_sprites_list.sort(key=lambda x: type(x) is not SubField)
 
     for sprite in all_sprites_list:
         sprite.update_theme()
 
 
-def create_path(filename: str) -> str:
-    return os.path.join(img_folder, filename)
-
-
-def add_hovered(filename: str) -> tuple[str, str]:
-    return filename, f'{filename.split(".")[0]}_hovered.png'
-
-
 if __name__ == '__main__':
-    # setting up parameters
-    try:
-        with open('settings.pkl', 'rb') as file:
-            settings = pickle.load(file)
-    except FileNotFoundError:
-        settings = Settings()
-
-    FPS = 30
-    CENTER = (settings.width // 2, settings.width // 2 + 80 * settings.scale)
-    CENTER_SUBFIELD_CENTER_DIST = int(settings.grid_width * 2.5 + settings.cell_width * 1.5)
-    SUBFIELD_CORDS = ((CENTER[0] - CENTER_SUBFIELD_CENTER_DIST, CENTER[1] - CENTER_SUBFIELD_CENTER_DIST),
-                      (CENTER[0] + CENTER_SUBFIELD_CENTER_DIST, CENTER[1] - CENTER_SUBFIELD_CENTER_DIST),
-                      (CENTER[0] - CENTER_SUBFIELD_CENTER_DIST, CENTER[1] + CENTER_SUBFIELD_CENTER_DIST),
-                      (CENTER[0] + CENTER_SUBFIELD_CENTER_DIST, CENTER[1] + CENTER_SUBFIELD_CENTER_DIST)
-                      )
-    ARROW_CORDS_OPERATIONS = ((lambda cords: (cords[0] - (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1]),
-                               lambda cords: (cords[0], cords[1] - (CENTER_SUBFIELD_CENTER_DIST + 25))),
-                              (lambda cords: (cords[0], cords[1] - (CENTER_SUBFIELD_CENTER_DIST + 25)),
-                               lambda cords: (cords[0] + (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1])),
-                              (lambda cords: (cords[0], cords[1] + (CENTER_SUBFIELD_CENTER_DIST + 25)),
-                               lambda cords: (cords[0] - (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1])),
-                              (lambda cords: (cords[0] + (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1]),
-                               lambda cords: (cords[0], cords[1] + (CENTER_SUBFIELD_CENTER_DIST + 25)))
-                              )
-
-    SIGN_CORDS = (settings.grid_width, 2 * settings.grid_width + settings.cell_width,
-                  3 * settings.grid_width + 2 * settings.cell_width)
-
-    COLORS = {'white': (255, 255, 255), 'black': (0, 0, 0)}
-
-    update_images(settings.get_color_palet(), settings.scale)
-
-    # creating game and window
-    pygame.init()
-    pygame.mixer.init()
-    screen = pygame.display.set_mode((settings.width, settings.height))
-    pygame.display.set_caption("")
-    clock = pygame.time.Clock()
-
-    # loading images
-    game_folder = os.path.dirname(__file__)
-    img_folder = os.path.join(game_folder, 'pentago_img')
-
-    arrow_filenames = (('arrow_left_up_lefter.png', 'arrow_left_up_upper.png'),
-                       ('arrow_right_up_upper.png', 'arrow_right_up_righter.png'),
-                       ('arrow_left_down_downer.png', 'arrow_left_down_lefter.png'),
-                       ('arrow_right_down_righter.png', 'arrow_right_down_downer.png'))
-    arrow_files = tuple(tuple(tuple(create_path(i)
-                                    for i in add_hovered(filename))
-                              for filename in filenames)
-                        for filenames in arrow_filenames)
-
-    subfield_img = create_path('subfield.png')
-    cross_img = create_path('cross.png')
-    zero_img = create_path('zero.png')
-    x_won_text_img = create_path('x_won_text.png')
-    o_won_text_img = create_path('o_won_text.png')
-    draw_text_img = create_path('draw_text.png')
-    restart_text_img = create_path('restart_text.png')
-    icon_img = create_path('icon.png')
-
-    top_panel_img = create_path('top_panel.png')
-    restart_button_imgs = (create_path('restart_button.png'),
-                           create_path('restart_button_hovered.png'))
-    settings_button_imgs = (create_path('settings_button.png'),
-                            create_path('settings_button_hovered.png'))
-    pentago_text_img = create_path('pentago_text.png')
-
-    info_panel_img = create_path('rules.png')
-    close_button_imgs = (create_path('close_button.png'),
-                         create_path('close_button_hovered.png'))
-
-    theme_button_frame_imgs = (create_path('theme_button_frame.png'),
-                               create_path('theme_button_frame_hovered.png'),
-                               create_path('theme_button_frame_clicked.png'))
-    basic_theme_button_img = create_path('basic_theme_button.png')
-    pink_theme_button_img = create_path('pink_theme_button.png')
-    resolution_button_imgs = (create_path('resolution_button.png'),
-                              create_path('resolution_button_hovered.png'),
-                              create_path('resolution_button_clicked.png'))
-    rules_button_imgs = (create_path('rules_button.png'),
-                         create_path('rules_button_hovered.png'))
-    screen_settings_text_img = create_path('screen_settings_text.png')
-    settings_panel_img = create_path('settings_panel.png')
-
-    settings_panel = SettingsPanel()
-    info_panel = InfoPanel()
-
-    # creating sprites
-    cross_won_sprite = CordSpriteObject(x_won_text_img, (CENTER[0], CENTER[1] - 100))
-    zero_won_sprite = CordSpriteObject(o_won_text_img, (CENTER[0], CENTER[1] - 100))
-    draw_sprite = CordSpriteObject(draw_text_img, (CENTER[0], CENTER[1] - 100))
-    restart_sprite = CordSpriteObject(restart_text_img, (CENTER[0], CENTER[1] + 100))
-    icon_sprite = SpriteObject(icon_img)
-
-    top_panel_sprite = CordSpriteObject(top_panel_img, (CENTER[0], CENTER[1] - CENTER[0] - 40))
-    restart_button = Button(restart_button_imgs,
-                            (settings.width - 40, CENTER[1] - CENTER[0] - 40),
-                            restart)
-    settings_button = Button(settings_button_imgs,
-                             (55, CENTER[1] - CENTER[0] - 40),
-                             settings_panel.button_action)
-    pentago_text = CordSpriteObject(pentago_text_img, (CENTER[0], CENTER[1] - CENTER[0] - 40))
-    close_button = Button(close_button_imgs,
-                          (settings.width - 40, CENTER[1] - CENTER[0] - 40),
-                          info_panel.close_button_action)
-    info_panel_sprite = CordSpriteObject(info_panel_img, CENTER)
-
-    settings_panel_sprite = CordSpriteObject(settings_panel_img,
-                                      (160 * settings.scale, top_panel_sprite.rect.bottom + 152 * settings.scale))
-    rules_button = Button(rules_button_imgs,
-                          (settings_panel_sprite.rect.center[0], settings_panel_sprite.rect.top + 40 * settings.scale),
-                          info_panel.open_button_action)
-    screen_settings_text = CordSpriteObject(screen_settings_text_img, (settings_panel_sprite.rect.center[0],
-                                                                       rules_button.rect.bottom + 100 * settings.scale))
-    basic_theme_button = CordSpriteObject(basic_theme_button_img,
-                                          (70 * settings.scale, screen_settings_text.rect.bottom + 30 * settings.scale))
-    pink_theme_button = CordSpriteObject(pink_theme_button_img,
-                                         (150 * settings.scale, screen_settings_text.rect.bottom + 30 * settings.scale))
-
-    theme_choice = Choice(settings.update_theme)
-    basic_theme_button_frame = ChoiceButton(theme_button_frame_imgs,
-                                            (70 * settings.scale,
-                                             screen_settings_text.rect.bottom + 30 * settings.scale),
-                                            settings.theme == 'basic',
-                                            theme_choice,
-                                            ('basic',))
-    pink_theme_button_frame = ChoiceButton(theme_button_frame_imgs,
-                                           (150 * settings.scale,
-                                            screen_settings_text.rect.bottom + 30 * settings.scale),
-                                           settings.theme == 'pale pink',
-                                           theme_choice,
-                                           ('pale pink',))
-
-    resolution_choice = Choice(settings.update_scale)
-    resolution_1x_button = ChoiceButton(resolution_button_imgs,
-                                        (42 * settings.scale, 247 * settings.scale),
-                                        settings.scale == 1,
-                                        resolution_choice,
-                                        (1,))
-    resolution_2x_button = ChoiceButton(resolution_button_imgs,
-                                        (42 * settings.scale, 277 * settings.scale),
-                                        settings.scale == 2,
-                                        resolution_choice,
-                                        (2,))
-
-    # setting up icon
-    pygame.display.set_icon(icon_sprite.image)
-
-    # creating groups
-    top_panel_sprites = pygame.sprite.Group()
-    subfield_sprites = pygame.sprite.Group()
-    arrow_sprites = pygame.sprite.Group()
-    all_sprites = pygame.sprite.Group()
-    all_sprites_list = []
-    field = Field()
-    arrows = []
-    text_sprites = (cross_won_sprite, zero_won_sprite, draw_sprite, restart_sprite)
-
-    # creating field
-    top_panel_sprites.add(top_panel_sprite, restart_button, settings_button, pentago_text)
-    info_panel.add(info_panel_sprite, close_button)
-    settings_panel.add(settings_panel_sprite, rules_button, screen_settings_text, basic_theme_button, pink_theme_button,
-                         resolution_1x_button, resolution_2x_button, basic_theme_button_frame, pink_theme_button_frame)
-
-    all_sprites.add(subfield_sprites, arrow_sprites, top_panel_sprites)
-    all_sprites_list.extend(subfield_sprites)
-    all_sprites_list.extend(arrow_sprites)
-    all_sprites_list.extend(top_panel_sprites)
-    all_sprites_list.extend(info_panel.sprite_group)
-    all_sprites_list.extend(settings_panel.sprite_group)
-
-    restart()
-
-    running = True
-    while running:
-        clock.tick(FPS)
-        for event in pygame.event.get():
-            # check for closing window
-            if event.type == pygame.QUIT:
-                with open('settings.pkl', 'wb') as file:
-                    pickle.dump(settings, file)
-                running = False
-            all_sprites.update(event)
-
-            if event.type == pygame.MOUSEBUTTONUP:
-                cords = pygame.mouse.get_pos()
-                if not (info_panel_opened or settings_opened):
-                    if field.cross_won:
-                        cross_won_sprite.add(all_sprites)
-                        restart_sprite.add(all_sprites)
-                        field.active = False
-                    if field.zero_won:
-                        zero_won_sprite.add(all_sprites)
-                        restart_sprite.add(all_sprites)
-                        field.active = False
-                    if field.draw:
-                        draw_sprite.add(all_sprites)
-                        restart_sprite.add(all_sprites)
-                        field.active = False
-
-            if event.type == pygame.KEYDOWN:
-
-                # debug settings changing
-                if pygame.key.get_pressed()[pygame.K_HOME]:
-                    settings.back_to_default()
-                    with open('settings.pkl', 'wb') as file:
-                        pickle.dump(settings, file)
-                    running = False
-
-                if pygame.key.get_pressed()[pygame.K_2]:
-                    settings.update_scale(2)
-
-                if pygame.key.get_pressed()[pygame.K_1]:
-                    settings.update_scale(1)
-
-                if pygame.key.get_pressed()[pygame.K_p]:
-                    settings.update_theme('pale pink')
-
-                if pygame.key.get_pressed()[pygame.K_b]:
-                    settings.update_theme('basic')
-
-                # restart after finish
-                if not (field.active or settings_opened or info_panel_opened):
-                    if pygame.key.get_pressed()[pygame.K_SPACE]:
-                        restart()
-
-        # update
-        all_sprites.update()
-
-        # render
-        screen.fill(settings.get_color('background_color'))
-        all_sprites.draw(screen)
-
-        # return to display
-        pygame.display.flip()
-
+    game = Pentago()
+    game.run()
     pygame.quit()
