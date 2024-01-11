@@ -7,16 +7,16 @@ from typing import Callable, Any, Iterable, Tuple
 
 
 class Field:
-    def __init__(self, parent):
-        self.parent = parent
+    def __init__(self, game):
+        self.game = game
         self._active = False
         self._current_step = 0
         self.current_sign = 0
         self.cross_won = False
         self.zero_won = False
         self.draw = False
-        self.center = self.parent.settings.field_center()
-        subfield_center_dist = self.parent.settings.subfield_center_distance()
+        self.center = self.game.settings.field_center()
+        subfield_center_dist = self.game.settings.subfield_center_distance()
         self.subfield_cords = ((self.center[0] - subfield_center_dist, self.center[1] - subfield_center_dist),
                                (self.center[0] + subfield_center_dist, self.center[1] - subfield_center_dist),
                                (self.center[0] - subfield_center_dist, self.center[1] + subfield_center_dist),
@@ -31,37 +31,58 @@ class Field:
                                                 (lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1]),
                                                  lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)))
                                                 )
-        self.sign_cords = (self.parent.settings.grid_width, 2 * self.parent.settings.grid_width + self.parent.settings.cell_width,
-                           3 * self.parent.settings.grid_width + 2 * self.parent.settings.cell_width)
+        self.sign_cords = (self.game.settings.grid_width, 2 * self.game.settings.grid_width + self.game.settings.cell_width,
+                           3 * self.game.settings.grid_width + 2 * self.game.settings.cell_width)
+        self.sprites_init()
 
+    def update_scale(self):
+        self.center = self.game.settings.field_center()
+        subfield_center_dist = self.game.settings.subfield_center_distance()
+        self.subfield_cords = ((self.center[0] - subfield_center_dist, self.center[1] - subfield_center_dist),
+                               (self.center[0] + subfield_center_dist, self.center[1] - subfield_center_dist),
+                               (self.center[0] - subfield_center_dist, self.center[1] + subfield_center_dist),
+                               (self.center[0] + subfield_center_dist, self.center[1] + subfield_center_dist)
+                               )
+        self.arrow_cords_from_subfield_cords = ((lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1]),
+                                                 lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25))),
+                                                (lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25)),
+                                                 lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1])),
+                                                (lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)),
+                                                 lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1])),
+                                                (lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1]),
+                                                 lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)))
+                                                )
+        self.sign_cords = (
+        self.game.settings.grid_width, 2 * self.game.settings.grid_width + self.game.settings.cell_width,
+        3 * self.game.settings.grid_width + 2 * self.game.settings.cell_width)
 
     def sprites_init(self):
         arrow_filenames = (('arrow_left_up_lefter.png', 'arrow_left_up_upper.png'),
                            ('arrow_right_up_upper.png', 'arrow_right_up_righter.png'),
                            ('arrow_left_down_downer.png', 'arrow_left_down_lefter.png'),
                            ('arrow_right_down_righter.png', 'arrow_right_down_downer.png'))
-        self.arrow_files = tuple(tuple(self.parent.create_img_path(self.parent.add_hovered(filename))
+        self.arrow_files = tuple(tuple(self.game.create_img_path(self.game.add_hovered(filename))
                                        for filename in filenames)
                                  for filenames in arrow_filenames)
 
-        self.cross_won_sprite = CordSpriteObject(self.parent.create_img_path('x_won_text.png'),
+        self.cross_won_sprite = CordSpriteObject(self.game, self.game.create_img_path('x_won_text.png'),
                                                  (self.center[0], self.center[1] - 100))
-        self.zero_won_sprite = CordSpriteObject(self.parent.create_img_path('o_won_text.png'),
+        self.zero_won_sprite = CordSpriteObject(self.game, self.game.create_img_path('o_won_text.png'),
                                                 (self.center[0], self.center[1] - 100))
-        self.draw_sprite = CordSpriteObject(self.parent.create_img_path,
+        self.draw_sprite = CordSpriteObject(self.game, self.game.create_img_path('draw_text.png'),
                                             (self.center[0], self.center[1] - 100))
-        self.restart_sprite = CordSpriteObject(self.parent.create_img_path('restart_text.png'),
+        self.restart_sprite = CordSpriteObject(self.game, self.game.create_img_path('restart_text.png'),
                                                (self.center[0], self.center[1] + 100))
         self.text_sprites = pygame.sprite.Group(self.cross_won_sprite, self.zero_won_sprite,
                                                 self.draw_sprite, self.restart_sprite)
         self.field = [SubField(i, self) for i in range(4)]
-        self.parent.all_sprites.add(self.field)
+        self.game.all_sprites.add(self.field)
         for subfield in self.field:
             for row in subfield:
-                self.parent.all_sprites.add(*row)
-                self.parent.all_sprites_list.extend(row)
-            self.parent.all_sprites.add(subfield.counterclockwise_arrow, subfield.clockwise_arrow)
-            self.parent.all_sprites_list.extend((subfield.counterclockwise_arrow, subfield.clockwise_arrow))
+                self.game.all_sprites.add(*row)
+                self.game.all_sprites_list.extend(row)
+            self.game.all_sprites.add(subfield.counterclockwise_arrow, subfield.clockwise_arrow)
+            self.game.all_sprites_list.extend((subfield.counterclockwise_arrow, subfield.clockwise_arrow))
 
     @property
     def active(self):
@@ -70,6 +91,8 @@ class Field:
     @active.setter
     def active(self, active: bool):
         print(f'changing field.active from {self._active} to {active}')
+        if active == self._active:
+            return
         self._active = active
         if not self.active:
             self.set_subfields_active(False)
@@ -112,15 +135,16 @@ class Field:
 
         if self.cross_won or self.zero_won or self.draw:
             self.active = False
-            self.parent.all_sprites.add(self.restart_sprite)
+            self.game.all_sprites.add(self.restart_sprite)
             if self.cross_won:
-                self.parent.all_sprites.add(self.cross_won_sprite)
+                self.game.all_sprites.add(self.cross_won_sprite)
             elif self.zero_won:
-                self.parent.all_sprites.add(self.zero_won_sprite)
+                self.game.all_sprites.add(self.zero_won_sprite)
             else:
-                self.parent.all_sprites.add(self.draw_sprite)
+                self.game.all_sprites.add(self.draw_sprite)
 
     def set_subfields_active(self, active: bool) -> None:
+        print(self.__dict__)
         for subfield in self.field:
             subfield.set_active(active)
 
@@ -183,7 +207,7 @@ class Field:
             self.draw = True
 
     def restart(self):
-        self.parent.all_sprites.remove(self.text_sptites)
+        self.game.all_sprites.remove(self.text_sprites)
         for subfield in self.field:
             subfield.restart()
         self.cross_won = False
@@ -216,8 +240,9 @@ class Choice:
 
 
 class SpriteObject(pygame.sprite.Sprite):
-    def __init__(self, img: str):
+    def __init__(self, game, img: str):
         super().__init__()
+        self.game = game
         self.img_path = img
         self.image = pygame.image.load(img)
         self.rect = self.image.get_rect()
@@ -230,8 +255,8 @@ class SpriteObject(pygame.sprite.Sprite):
 
 
 class CordSpriteObject(SpriteObject):
-    def __init__(self, img: str, cords: (int, int)):
-        super().__init__(img)
+    def __init__(self, game, img: str, cords: (int, int)):
+        super().__init__(game, img)
         self.rect.center = cords
 
     def set_pos(self, cords: (int, int)) -> None:
@@ -245,8 +270,8 @@ class CordSpriteObject(SpriteObject):
 
 
 class Button(CordSpriteObject):
-    def __init__(self, imgs: (str, str), cords: (int, int), action: Callable = None):
-        super().__init__(imgs[0], cords)
+    def __init__(self, game, imgs: (str, str), cords: (int, int), action: Callable = None):
+        super().__init__(game, imgs[0], cords)
         self.active = True
         self.imgs_path = imgs
         self.basic_image = pygame.image.load(imgs[0])
@@ -286,9 +311,9 @@ class Button(CordSpriteObject):
 
 
 class ChoiceButton(Button):
-    def __init__(self, imgs: (str, str, str), cords: (int, int), clicked: bool,
+    def __init__(self, game, imgs: (str, str, str), cords: (int, int), clicked: bool,
                  choice_group: Choice, click_args: Iterable):
-        super().__init__(imgs[:2], cords)
+        super().__init__(game, imgs[:2], cords)
         self.imgs_path = imgs
         self.clicked_image = pygame.image.load(self.imgs_path[2])
         self.clicked = clicked
@@ -335,14 +360,16 @@ class SubField(pygame.sprite.Sprite):
         super().__init__()
         self.field = field
         self.active = False
-        self.img_path = field.parent.create_img_path('subfield.png')
+        self.img_path = field.game.create_img_path('subfield.png')
         self.image = pygame.image.load(self.img_path)
         self.rect = self.image.get_rect()
-        self.rect.center = SUBFIELD_CORDS[num]
-        self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
-        self.counterclockwise_arrow = Arrow(field.arrow_cords_from_subfield_cords[num][0](field.subfield_cords[num]),
+        self.rect.center = field.subfield_cords[num]
+        self.field_list = [[Cell(field.game, self, i, j) for i in range(3)] for j in range(3)]
+        self.counterclockwise_arrow = Arrow(self.field.game,
+                                            field.arrow_cords_from_subfield_cords[num][0](field.subfield_cords[num]),
                                             field.arrow_files[num][0], self, False)
-        self.clockwise_arrow = Arrow(field.arrow_cords_from_subfield_cords[num][1](field.subfield_cords[num]),
+        self.clockwise_arrow = Arrow(self.field.game,
+                                     field.arrow_cords_from_subfield_cords[num][1](field.subfield_cords[num]),
                                      field.arrow_files[num][1], self, True)
 
     def add_sign(self, x: int, y: int) -> None:
@@ -351,13 +378,13 @@ class SubField(pygame.sprite.Sprite):
 
         self.field_list[y][x].kill()
         if self.field.current_sign == 1:
-            self.field_list[y][x] = Cross(self, x, y)
+            self.field_list[y][x] = Cross(self.field.game, self, x, y)
             self.field.current_sign = 0
         else:
-            self.field_list[y][x] = Zero(self, x, y)
+            self.field_list[y][x] = Zero(self.field.game, self, x, y)
             self.field.current_sign = 1
-        self.field.parent.all_sprites.add(self.field_list[y][x])
-        if field.is_any_empty_subfields():
+        self.field.game.all_sprites.add(self.field_list[y][x])
+        if self.field.is_any_empty_subfields():
             self.field.current_step = -1
         else:
             self.field.current_step = 1
@@ -382,9 +409,9 @@ class SubField(pygame.sprite.Sprite):
         for row in self.field_list:
             for cell in row:
                 cell.kill()
-        self.field_list = [[Cell(self, i, j) for i in range(3)] for j in range(3)]
+        self.field_list = [[Cell(self.field.game, self, i, j) for i in range(3)] for j in range(3)]
         for row in self.field_list:
-            field.parent.all_sprites.add(*row)
+            self.field.game.all_sprites.add(*row)
 
     def hovered(self) -> None:
         pass
@@ -416,15 +443,15 @@ class SubField(pygame.sprite.Sprite):
         self.clockwise_arrow.set_active(active)
 
     def __str__(self) -> str:
-        return f'SubField {field.field.index(self)}'
+        return f'SubField {self.field.field.index(self)}'
 
     def __getitem__(self, key):
         return self.field_list[key]
 
 
 class Arrow(Button):
-    def __init__(self, cords, imgs, subfield, clockwise):
-        super().__init__(imgs, cords)
+    def __init__(self, game, cords, imgs, subfield, clockwise):
+        super().__init__(game, imgs, cords)
         self.subfield = subfield
         self.clockwise = clockwise
         if self.clockwise:
@@ -445,20 +472,21 @@ class Arrow(Button):
 
 
 class Cell(pygame.sprite.Sprite):
-    def __init__(self, subfield, x, y):
+    def __init__(self, game, subfield, x, y):
         super().__init__()
+        self.game = game
         self.subfield = subfield
         self.active = False
         self.cords = (x, y)
-        self.basic_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
-        self.basic_image.fill(game.settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
-        self.hovered_image.fill(game.settings.get_color('hovered_color'))
+        self.basic_image = pygame.Surface((self.game.settings.cell_width, self.game.settings.cell_width))
+        self.basic_image.fill(self.game.settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((self.game.settings.cell_width, self.game.settings.cell_width))
+        self.hovered_image.fill(self.game.settings.get_color('hovered_color'))
         self.image = self.basic_image
         self.rect = self.image.get_rect()
-        self.rect.topleft = (self.subfield.rect.topleft[0] + game.field.sign_cords[self.cords[0]],
-                             self.subfield.rect.topleft[1] + game.field.sign_cords[self.cords[1]])
-        game.all_sprites_list.append(self)
+        self.rect.topleft = (self.subfield.rect.topleft[0] + subfield.field.sign_cords[self.cords[0]],
+                             self.subfield.rect.topleft[1] + subfield.field.sign_cords[self.cords[1]])
+        self.game.all_sprites_list.append(self)
 
     def set_active(self, active: bool) -> None:
         self.active = active
@@ -468,8 +496,8 @@ class Cell(pygame.sprite.Sprite):
 
     def change_pos(self, x, y):
         self.cords = (x, y)
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+        self.rect.topleft = (self.subfield.rect.topleft[0] + self.subfield.field.sign_cords[self.cords[0]],
+                             self.subfield.rect.topleft[1] + self.subfield.field.sign_cords[self.cords[1]])
 
     def update(self, event=None):
         if self.active and collide(pygame.mouse.get_pos(), self):
@@ -482,21 +510,21 @@ class Cell(pygame.sprite.Sprite):
                 self.subfield.add_sign(*self.cords)
 
     def update_scale(self, *args):
-        self.basic_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
-        self.basic_image.fill(game.settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
-        self.hovered_image.fill(game.settings.get_color('hovered_color'))
+        self.basic_image = pygame.Surface((self.game.settings.cell_width, self.game.settings.cell_width))
+        self.basic_image.fill(self.game.settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((self.game.settings.cell_width, self.game.settings.cell_width))
+        self.hovered_image.fill(self.game.settings.get_color('hovered_color'))
         self.image = self.basic_image
 
         self.rect = self.image.get_rect()
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+        self.rect.topleft = (self.subfield.rect.topleft[0] + self.subfield.field.sign_cords[self.cords[0]],
+                             self.subfield.rect.topleft[1] + self.subfield.field.sign_cords[self.cords[1]])
 
     def update_theme(self):
-        self.basic_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
-        self.basic_image.fill(game.settings.get_color('background_color'))
-        self.hovered_image = pygame.Surface((game.settings.cell_width, game.settings.cell_width))
-        self.hovered_image.fill(game.settings.get_color('hovered_color'))
+        self.basic_image = pygame.Surface((self.game.settings.cell_width, self.game.settings.cell_width))
+        self.basic_image.fill(self.game.settings.get_color('background_color'))
+        self.hovered_image = pygame.Surface((self.game.settings.cell_width, self.game.settings.cell_width))
+        self.hovered_image.fill(self.game.settings.get_color('hovered_color'))
         self.image = self.basic_image
 
     def __str__(self):
@@ -504,8 +532,8 @@ class Cell(pygame.sprite.Sprite):
 
 
 class Sign(Cell):
-    def __init__(self, field, image, x, y):
-        super().__init__(field, x, y)
+    def __init__(self, game, field, image, x, y):
+        super().__init__(game, field, x, y)
         self.img_path = image
         self.image = pygame.image.load(self.img_path)
 
@@ -516,26 +544,26 @@ class Sign(Cell):
         self.image = pygame.image.load(self.img_path)
 
         self.rect = self.image.get_rect()
-        self.rect.topleft = (self.subfield.rect.topleft[0] + SIGN_CORDS[self.cords[0]],
-                             self.subfield.rect.topleft[1] + SIGN_CORDS[self.cords[1]])
+        self.rect.topleft = (self.subfield.rect.topleft[0] + self.subfield.field.sign_cords[self.cords[0]],
+                             self.subfield.rect.topleft[1] + self.subfield.field.sign_cords[self.cords[1]])
 
     def update_theme(self):
         self.image = pygame.image.load(self.img_path)
 
 
 class Cross(Sign):
-    def __init__(self, field, x, y):
-        super().__init__(field, game.create_img_path('cross.png'), x, y)
+    def __init__(self, game, field, x, y):
+        super().__init__(game, field, game.create_img_path('cross.png'), x, y)
 
 
 class Zero(Sign):
-    def __init__(self, field, x, y):
-        super().__init__(field, game.create_img_path('zero.png'), x, y)
+    def __init__(self, game, field, x, y):
+        super().__init__(game, field, game.create_img_path('zero.png'), x, y)
 
 
 class Panel:
-    def __init__(self, parent):
-        self.parent = parent
+    def __init__(self, game):
+        self.game = game
         self.sprite_group = pygame.sprite.Group()
         self._active = False
 
@@ -555,88 +583,88 @@ class Panel:
         self.sprite_group.add(*args)
 
     def open(self):
-        self.parent.all_sprites.add(self.sprite_group)
+        self.game.all_sprites.add(self.sprite_group)
 
     def close(self):
-        self.parent.all_sprites.remove(self.sprite_group)
+        self.game.all_sprites.remove(self.sprite_group)
 
 
 class SettingsPanel(Panel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        settings_panel_sprite = CordSpriteObject(self.parent.create_img_path('settings_panel.png'),
-                                                 (160 * self.parent.settings.scale,
-                                                  self.parent.top_panel.top_panel_sprite.rect.bottom +
-                                                  152 * self.parent.settings.scale))
-        rules_button = Button(parent.create_img_path(self.parent.add_hovered('rules_button.png')),
+    def __init__(self, game):
+        super().__init__(game)
+        settings_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('settings_panel.png'),
+                                                 (160 * self.game.settings.scale,
+                                                  self.game.top_panel.top_panel_sprite.rect.bottom +
+                                                  152 * self.game.settings.scale))
+        rules_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('rules_button.png')),
                               (settings_panel_sprite.rect.center[0],
-                               settings_panel_sprite.rect.top + 40 * self.parent.settings.scale),
+                               settings_panel_sprite.rect.top + 40 * self.game.settings.scale),
                                self.rules_button_action)
-        screen_settings_text = CordSpriteObject(parent.create_img_path('screen_settings_text.png'),
+        screen_settings_text = CordSpriteObject(self.game, self.game.create_img_path('screen_settings_text.png'),
                                                 (settings_panel_sprite.rect.center[0],
-                                                 rules_button.rect.bottom + 100 * self.parent.settings.scale))
-        basic_theme_button = CordSpriteObject(self.parent.create_img_path('basic_theme_button.png'),
-                                              (70 * self.parent.settings.scale,
-                                               screen_settings_text.rect.bottom + 30 * self.parent.settings.scale))
-        pink_theme_button = CordSpriteObject(self.parent.create_img_path('pink_theme_button.png'),
-                                             (150 * self.parent.settings.scale,
-                                              screen_settings_text.rect.bottom + 30 * self.parent.settings.scale))
+                                                 rules_button.rect.bottom + 100 * self.game.settings.scale))
+        basic_theme_button = CordSpriteObject(self.game, self.game.create_img_path('basic_theme_button.png'),
+                                              (70 * self.game.settings.scale,
+                                               screen_settings_text.rect.bottom + 30 * self.game.settings.scale))
+        pink_theme_button = CordSpriteObject(self.game, self.game.create_img_path('pink_theme_button.png'),
+                                             (150 * self.game.settings.scale,
+                                              screen_settings_text.rect.bottom + 30 * self.game.settings.scale))
 
-        theme_choice = Choice(self.parent.settings.update_theme)
-        basic_theme_button_frame = ChoiceButton(
-            parent.create_img_path(parent.add_hovered_clicked('theme_button_frame.png')),
-            (70 * game.settings.scale, screen_settings_text.rect.bottom + 30 * game.settings.scale),
-            game.settings.theme == 'basic',
+        theme_choice = Choice(self.game.settings.update_theme)
+        basic_theme_button_frame = ChoiceButton(self.game,
+            self.game.create_img_path(self.game.add_hovered_clicked('theme_button_frame.png')),
+            (70 * self.game.settings.scale, screen_settings_text.rect.bottom + 30 * self.game.settings.scale),
+            self.game.settings.theme == 'basic',
             theme_choice,
             ('basic',))
-        pink_theme_button_frame = ChoiceButton(parent.create_img_path(parent.add_hovered_clicked('theme_button_frame.png')),
-                                               (150 * game.settings.scale,
-                                                screen_settings_text.rect.bottom + 30 * game.settings.scale),
-                                               game.settings.theme == 'pale pink',
+        pink_theme_button_frame = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('theme_button_frame.png')),
+                                               (150 * self.game.settings.scale,
+                                                screen_settings_text.rect.bottom + 30 * self.game.settings.scale),
+                                               self.game.settings.theme == 'pale pink',
                                                theme_choice,
                                                ('pale pink',))
-        resolution_choice = Choice(game.settings.update_scale)
-        resolution_1x_button = ChoiceButton(parent.create_img_path(parent.add_hovered_clicked('resolution_button.png')),
-                                            (42 * game.settings.scale, 247 * game.settings.scale),
-                                            game.settings.scale == 1,
+        resolution_choice = Choice(self.game.settings.update_scale)
+        resolution_1x_button = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('resolution_button.png')),
+                                            (42 * self.game.settings.scale, 247 * self.game.settings.scale),
+                                            self.game.settings.scale == 1,
                                             resolution_choice,
                                             (1,))
-        resolution_2x_button = ChoiceButton(parent.create_img_path(parent.add_hovered_clicked('resolution_button.png')),
-                                            (42 * game.settings.scale, 277 * game.settings.scale),
-                                            game.settings.scale == 2,
+        resolution_2x_button = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('resolution_button.png')),
+                                            (42 * self.game.settings.scale, 277 * self.game.settings.scale),
+                                            self.game.settings.scale == 2,
                                             resolution_choice,
                                             (2,))
         self.add(settings_panel_sprite, rules_button, screen_settings_text, basic_theme_button,
                  pink_theme_button, resolution_1x_button, resolution_2x_button,
                  basic_theme_button_frame, pink_theme_button_frame)
-        self.parent.all_sprites_list.extend(self.sprite_group)
+        self.game.all_sprites_list.extend(self.sprite_group)
 
     def rules_button_action(self):
-        self.parent.info_panel.open_button_action()
+        self.game.info_panel.open_button_action()
 
     def button_action(self):
         self.active = not self.active
 
     def open(self):
         super().open()
-        game.info_panel.active = False
-        field.active = False
+        self.game.info_panel.active = False
+        self.game.field.active = False
 
     def close(self):
         super().close()
-        field.active = True
+        self.game.field.active = True
 
 
 class InfoPanel(Panel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        info_panel_sprite = CordSpriteObject(game.create_img_path('rules.png'),
-                                             game.field.center)
-        close_button = Button(game.create_img_path(game.add_hovered('close_button.png')),
-                              (game.settings.width - 40, game.field.center[1] - game.field.center[0] - 40),
+    def __init__(self, game):
+        super().__init__(game)
+        info_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('rules.png'),
+                                             self.game.field.center)
+        close_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('close_button.png')),
+                              (self.game.settings.width - 40, self.game.field.center[1] - self.game.field.center[0] - 40),
                               self.close_button_action)
         self.add(info_panel_sprite, close_button)
-        self.parent.all_sprites_list.extend(self.sprite_group)
+        self.game.all_sprites_list.extend(self.sprite_group)
 
 
     def open_button_action(self):
@@ -647,42 +675,43 @@ class InfoPanel(Panel):
 
     def open(self):
         super().open()
-        game.all_sprites.remove(game.top_panel.restart_button)
-        game.settings_panel.active = False
-        field.active = False
+        self.game.all_sprites.remove(self.game.top_panel.restart_button)
+        self.game.settings_panel.active = False
+        self.game.field.active = False
 
     def close(self):
         super().close()
-        game.all_sprites.add(game.top_panel.restart_button)
-        field.active = True
+        self.game.all_sprites.add(self.game.top_panel.restart_button)
+        self.game.field.active = True
 
 
 class TopPanel(Panel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.top_panel_sprite = CordSpriteObject(self.parent.create_img_path('top_panel.png'),
-                                            (self.parent.field.center[0],
-                                             self.parent.field.center[1] - self.parent.field.center[0] - 40))
-        restart_button = Button(self.parent.create_img_path(self.parent.add_hovered('restart_button.png')),
-                                (self.parent.settings.width - 40,
-                                 self.parent.field.center[1] - self.parent.field.center[0] - 40),
-                                self.parent.restart)
-        settings_button = Button(self.parent.create_img_path(self.parent.add_hovered('settings_button.png')),
-                                 (55, self.parent.field.center[1] - self.parent.field.center[0] - 40),
+    def __init__(self, game):
+        super().__init__(game)
+        self.top_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('top_panel.png'),
+                                            (self.game.field.center[0],
+                                             self.game.field.center[1] - self.game.field.center[0] - 40))
+        self.restart_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('restart_button.png')),
+                                (self.game.settings.width - 40,
+                                 self.game.field.center[1] - self.game.field.center[0] - 40),
+                                self.game.restart)
+        settings_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('settings_button.png')),
+                                 (55, self.game.field.center[1] - self.game.field.center[0] - 40),
                                  self.settings_button_action)
-        pentago_text = CordSpriteObject(self.parent.create_img_path('pentago_text.png'),
-                                        (self.parent.field.center[0],
-                                         self.parent.field.center[1] - self.parent.field.center[0] - 40))
-        self.add(self.top_panel_sprite, restart_button, settings_button, pentago_text)
+        pentago_text = CordSpriteObject(self.game, self.game.create_img_path('pentago_text.png'),
+                                        (self.game.field.center[0],
+                                         self.game.field.center[1] - self.game.field.center[0] - 40))
+        self.add(self.top_panel_sprite, self.restart_button, settings_button, pentago_text)
         self.active = True
-        self.parent.all_sprites_list.extend(self.sprite_group)
+        self.game.all_sprites_list.extend(self.sprite_group)
 
     def settings_button_action(self):
-        self.parent.settings_panel.button_action()
+        self.game.settings_panel.button_action()
 
 
 class Settings:
-    def __init__(self, saved_settings=None):
+    def __init__(self, game, saved_settings=None):
+        self.game = game
         self.basic_settings = {'width': 600, 'height': 680, 'scale': 1, 'theme': 'basic',
                                'cell_width': 65, 'grid_width': 10}
         self.themes = {'basic': ((255, 255, 255, 255), (170, 220, 175, 255), (93, 143, 98, 255),
@@ -716,21 +745,24 @@ class Settings:
         return self.themes[palet_name]
 
     def update_scale(self, new_scale: int) -> None:
-        if new_scale != self.scale:
-            old_scale = self.scale
-            self.scale = new_scale
-            self.width = self.basic_settings['width'] * self.scale
-            self.height = self.basic_settings['height'] * self.scale
-            self.cell_width = self.basic_settings['cell_width'] * self.scale
-            self.grid_width = self.basic_settings['grid_width'] * self.scale
-            update_images(self.themes[self.theme], self.scale)
-            update_screen_scale(old_scale, new_scale)
+        if new_scale == self.scale:
+            return
+        old_scale = self.scale
+        self.scale = new_scale
+        self.width = self.basic_settings['width'] * self.scale
+        self.height = self.basic_settings['height'] * self.scale
+        self.cell_width = self.basic_settings['cell_width'] * self.scale
+        self.grid_width = self.basic_settings['grid_width'] * self.scale
+        update_images(self.themes[self.theme], self.scale)
+        self.game.update_screen_scale(old_scale, new_scale)
 
     def update_theme(self, new_theme: str) -> None:
-        if new_theme != self.theme:
-            self.theme = new_theme
-            update_images(self.themes[self.theme], self.scale)
-            update_screen_theme()
+        if new_theme == self.theme:
+            return
+        self.theme = new_theme
+        update_images(self.themes[self.theme], self.scale)
+        print(self.__dict__)
+        self.game.update_screen_theme()
 
     def back_to_default(self):
         self.update_scale(1)
@@ -749,7 +781,7 @@ class Pentago:
             with open('settings.pkl', 'rb') as file:
                 self.settings = pickle.load(file)
         except FileNotFoundError:
-            self.settings = Settings()
+            self.settings = Settings(self)
 
         update_images(self.settings.get_color_palet(), self.settings.scale)
 
@@ -774,7 +806,7 @@ class Pentago:
         self.info_panel = InfoPanel(self)
 
         # setting up icon
-        icon_sprite = SpriteObject(self.create_img_path('icon.png'))
+        icon_sprite = SpriteObject(self, self.create_img_path('icon.png'))
         pygame.display.set_icon(icon_sprite.image)
 
         self.FPS = 30
@@ -795,7 +827,7 @@ class Pentago:
     def restart(self):
         self.info_panel.active = False
         self.settings_panel.active = False
-        field.restart()
+        self.field.restart()
 
     def run(self):
         self.restart()
@@ -835,7 +867,7 @@ class Pentago:
                     # restart after finish
                     if any(self.field.get_conditions()):
                         if pygame.key.get_pressed()[pygame.K_SPACE]:
-                            restart()
+                            self.restart()
 
             # update
             self.all_sprites.update()
@@ -846,6 +878,27 @@ class Pentago:
 
             # return to display
             pygame.display.flip()
+
+    def update_screen_scale(self, old_scale: int, new_scale: int) -> None:
+        """Updates screen and all sprites with current scale setting"""
+
+        self.field.update_scale()
+        pygame.display.set_mode((self.settings.width, self.settings.height))
+
+        self.all_sprites_list.extend(filter(lambda sprite: sprite not in self.all_sprites_list, self.all_sprites))
+        self.all_sprites_list.sort(key=lambda x: type(x) is not SubField)
+
+        for sprite in self.all_sprites_list:
+            sprite.update_scale(old_scale, new_scale)
+
+    def update_screen_theme(self):
+        """Updates all sprites with current theme setting"""
+
+        self.all_sprites_list.extend(filter(lambda sprite: sprite not in self.all_sprites_list, self.all_sprites))
+        self.all_sprites_list.sort(key=lambda x: type(x) is not SubField)
+
+        for sprite in self.all_sprites_list:
+            sprite.update_theme()
 
 
 def split_by_len(obj, num):
@@ -878,17 +931,6 @@ def collide(cords, obj):
     if obj.rect.left <= x <= obj.rect.right and obj.rect.top <= y <= obj.rect.bottom:
         return True
     return False
-
-
-def restart():
-    global field, text_sprites
-    global info_panel_opened, settings_opened
-    for sprite in text_sprites:
-        sprite.kill()
-
-    info_panel_opened = False
-    settings_opened = False
-    field.restart()
 
 
 @time_decorator
@@ -950,49 +992,6 @@ def update_images(new_colors=None, scale=1) -> None:
                 hovered_filename = filename.split('.')[0] + '_hovered' + '.png'
                 new_img.save(os.path.join(img_folder, filename))
                 hovered_img.save(os.path.join(img_folder, hovered_filename))
-
-
-def update_screen_scale(old_scale: int, new_scale: int) -> None:
-    """Updates screen and all sprites with current scale setting"""
-
-    global CENTER, SUBFIELD_CORDS, ARROW_CORDS_OPERATIONS, SIGN_CORDS, all_sprites_list
-    CENTER = (game.settings.width // 2, game.settings.width // 2 + 80 * game.settings.scale)
-    CENTER_SUBFIELD_CENTER_DIST = int(game.settings.grid_width * 2.5 + game.settings.cell_width * 1.5)
-    SUBFIELD_CORDS = ((CENTER[0] - CENTER_SUBFIELD_CENTER_DIST, CENTER[1] - CENTER_SUBFIELD_CENTER_DIST),
-                      (CENTER[0] + CENTER_SUBFIELD_CENTER_DIST, CENTER[1] - CENTER_SUBFIELD_CENTER_DIST),
-                      (CENTER[0] - CENTER_SUBFIELD_CENTER_DIST, CENTER[1] + CENTER_SUBFIELD_CENTER_DIST),
-                      (CENTER[0] + CENTER_SUBFIELD_CENTER_DIST, CENTER[1] + CENTER_SUBFIELD_CENTER_DIST)
-                      )
-    ARROW_CORDS_OPERATIONS = ((lambda cords: (cords[0] - (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1]),
-                               lambda cords: (cords[0], cords[1] - (CENTER_SUBFIELD_CENTER_DIST + 25))),
-                              (lambda cords: (cords[0], cords[1] - (CENTER_SUBFIELD_CENTER_DIST + 25)),
-                               lambda cords: (cords[0] + (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1])),
-                              (lambda cords: (cords[0], cords[1] + (CENTER_SUBFIELD_CENTER_DIST + 25)),
-                               lambda cords: (cords[0] - (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1])),
-                              (lambda cords: (cords[0] + (CENTER_SUBFIELD_CENTER_DIST + 25), cords[1]),
-                               lambda cords: (cords[0], cords[1] + (CENTER_SUBFIELD_CENTER_DIST + 25)))
-                              )
-
-    SIGN_CORDS = (game.settings.grid_width, 2 * game.settings.grid_width + game.settings.cell_width,
-                  3 * game.settings.grid_width + 2 * game.settings.cell_width)
-
-    pygame.display.set_mode((game.settings.width, game.settings.height))
-
-    all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, game.all_sprites))
-    all_sprites_list.sort(key=lambda x: type(x) is not SubField)
-
-    for sprite in all_sprites_list:
-        sprite.update_scale(old_scale, new_scale)
-
-
-def update_screen_theme():
-    """Updates all sprites with current theme setting"""
-
-    all_sprites_list.extend(filter(lambda sprite: sprite not in all_sprites_list, game.all_sprites))
-    all_sprites_list.sort(key=lambda x: type(x) is not SubField)
-
-    for sprite in all_sprites_list:
-        sprite.update_theme()
 
 
 if __name__ == '__main__':
