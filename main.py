@@ -1,7 +1,7 @@
+import json
 import pygame
 import os
 from PIL import Image
-import pickle
 import time
 from typing import Callable, Any, Iterable, Tuple
 
@@ -136,6 +136,7 @@ class Field:
         if self.cross_won or self.zero_won or self.draw:
             self.active = False
             self.game.all_sprites.add(self.restart_sprite)
+            self.game.win_sound.play()
             if self.cross_won:
                 self.game.all_sprites.add(self.cross_won_sprite)
             elif self.zero_won:
@@ -290,10 +291,13 @@ class Button(CordSpriteObject):
 
     def update(self, event: pygame.event.Event = None) -> None:
         if self.active and collide(pygame.mouse.get_pos(), self):
-            self.image = self.hovered_image
+            if self.image is not self.hovered_image:
+                self.image = self.hovered_image
         else:
-            self.image = self.basic_image
+            if self.image is not self.basic_image:
+                self.image = self.basic_image
         if event is not None and event.type == pygame.MOUSEBUTTONUP and self.active and collide(event.pos, self):
+            self.game.click_sound.play()
             self.action()
 
     def update_scale(self, old_scale: int, new_scale: int) -> None:
@@ -501,12 +505,15 @@ class Cell(pygame.sprite.Sprite):
 
     def update(self, event=None):
         if self.active and collide(pygame.mouse.get_pos(), self):
-            self.image = self.hovered_image
+            if self.image is not self.hovered_image:
+                self.image = self.hovered_image
         else:
-            self.image = self.basic_image
+            if self.image is not self.basic_image:
+                self.image = self.basic_image
 
         if event is not None and event.type == pygame.MOUSEBUTTONUP:
             if self.active and collide(event.pos, self):
+                self.game.click_sound.play()
                 self.subfield.add_sign(*self.cords)
 
     def update_scale(self, *args):
@@ -599,7 +606,7 @@ class SettingsPanel(Panel):
         rules_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('rules_button.png')),
                               (settings_panel_sprite.rect.center[0],
                                settings_panel_sprite.rect.top + 40 * self.game.settings.scale),
-                               self.rules_button_action)
+                               self.game.open_info_panel)
         screen_settings_text = CordSpriteObject(self.game, self.game.create_img_path('screen_settings_text.png'),
                                                 (settings_panel_sprite.rect.center[0],
                                                  rules_button.rect.bottom + 100 * self.game.settings.scale))
@@ -639,21 +646,6 @@ class SettingsPanel(Panel):
                  basic_theme_button_frame, pink_theme_button_frame)
         self.game.all_sprites_list.extend(self.sprite_group)
 
-    def rules_button_action(self):
-        self.game.info_panel.open_button_action()
-
-    def button_action(self):
-        self.active = not self.active
-
-    def open(self):
-        super().open()
-        self.game.info_panel.active = False
-        self.game.field.active = False
-
-    def close(self):
-        super().close()
-        self.game.field.active = True
-
 
 class InfoPanel(Panel):
     def __init__(self, game):
@@ -661,11 +653,10 @@ class InfoPanel(Panel):
         info_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('rules.png'),
                                              self.game.field.center)
         close_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('close_button.png')),
-                              (self.game.settings.width - 40, self.game.field.center[1] - self.game.field.center[0] - 40),
-                              self.close_button_action)
+                              (self.game.settings.width - 40, 40 * self.game.settings.scale),
+                              self.game.open_field)
         self.add(info_panel_sprite, close_button)
         self.game.all_sprites_list.extend(self.sprite_group)
-
 
     def open_button_action(self):
         self.active = True
@@ -676,13 +667,10 @@ class InfoPanel(Panel):
     def open(self):
         super().open()
         self.game.all_sprites.remove(self.game.top_panel.restart_button)
-        self.game.settings_panel.active = False
-        self.game.field.active = False
 
     def close(self):
         super().close()
         self.game.all_sprites.add(self.game.top_panel.restart_button)
-        self.game.field.active = True
 
 
 class TopPanel(Panel):
@@ -690,23 +678,33 @@ class TopPanel(Panel):
         super().__init__(game)
         self.top_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('top_panel.png'),
                                             (self.game.field.center[0],
-                                             self.game.field.center[1] - self.game.field.center[0] - 40))
+                                             40 * self.game.settings.scale))
         self.restart_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('restart_button.png')),
                                 (self.game.settings.width - 40,
-                                 self.game.field.center[1] - self.game.field.center[0] - 40),
+                                 40 * self.game.settings.scale),
                                 self.game.restart)
         settings_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('settings_button.png')),
-                                 (55, self.game.field.center[1] - self.game.field.center[0] - 40),
-                                 self.settings_button_action)
+                                 (45 * game.settings.scale, 40 * self.game.settings.scale),
+                                 self.game.settings_button_action)
         pentago_text = CordSpriteObject(self.game, self.game.create_img_path('pentago_text.png'),
                                         (self.game.field.center[0],
-                                         self.game.field.center[1] - self.game.field.center[0] - 40))
-        self.add(self.top_panel_sprite, self.restart_button, settings_button, pentago_text)
-        self.active = True
+                                         40 * self.game.settings.scale))
+        self.game.all_sprites.add(self.top_panel_sprite, pentago_text)
+        self.add(self.restart_button, settings_button)
         self.game.all_sprites_list.extend(self.sprite_group)
 
     def settings_button_action(self):
         self.game.settings_panel.button_action()
+
+
+class StartPanel(Panel):
+    def __init__(self, game):
+        super().__init__(game)
+        start_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('start.png'),
+                                              self.game.field.center)
+        self.add(start_panel_sprite)
+        self.game.all_sprites_list.extend(self.sprite_group)
+        self.active = True
 
 
 class Settings:
@@ -718,21 +716,23 @@ class Settings:
                                  (0, 0, 0, 255), (180, 180, 180, 255), (9, 56, 13, 255)),
                        'pale pink': ((254, 245, 239, 255), (220, 193, 196, 255), (157, 92, 99, 255),
                                      (88, 75, 83, 255), (202, 155, 114, 255), (75, 29, 34, 255))}
-        if saved_settings is None:
+        try:
+            with open('settings.json', 'r') as file:
+                saved_settings = json.load(file)
+                self.width = saved_settings['width']
+                self.height = saved_settings['height']
+                self.scale = saved_settings['scale']
+                self.theme = saved_settings['theme']
+                self.cell_width = saved_settings['cell_width']
+                self.grid_width = saved_settings['grid_width']
+
+        except FileNotFoundError:
             self.width = self.basic_settings['width']
             self.height = self.basic_settings['height']
             self.scale = self.basic_settings['scale']
             self.theme = self.basic_settings['theme']
             self.cell_width = self.basic_settings['cell_width']
             self.grid_width = self.basic_settings['grid_width']
-
-        else:
-            self.width = saved_settings['width']
-            self.height = saved_settings['height']
-            self.scale = saved_settings['scale']
-            self.theme = saved_settings['theme']
-            self.cell_width = saved_settings['cell_width']
-            self.grid_width = saved_settings['grid_width']
 
     def get_color(self, color_name: str) -> tuple[int, int, int, int]:
         colors = ('background_color', 'non_clickable_color',
@@ -774,20 +774,21 @@ class Settings:
     def subfield_center_distance(self):
         return int(self.grid_width * 2.5 + self.cell_width * 1.5)
 
+    def save(self):
+        with open('settings.json', 'w') as file:
+            settings = {'width': self.width, 'height': self.height, 'scale': self.scale,
+                        'theme': self.theme, 'cell_width': self.cell_width, 'grid_width': self.grid_width}
+            json.dump(settings, file)
+
 
 class Pentago:
     def __init__(self):
-        try:
-            with open('settings.pkl', 'rb') as file:
-                self.settings = pickle.load(file)
-        except FileNotFoundError:
-            self.settings = Settings(self)
+        self.settings = Settings(self)
 
         update_images(self.settings.get_color_palet(), self.settings.scale)
 
         # creating game and window
         pygame.init()
-        pygame.mixer.init()
         self.screen = pygame.display.set_mode((self.settings.width, self.settings.height))
         pygame.display.set_caption("")
         self.clock = pygame.time.Clock()
@@ -795,6 +796,7 @@ class Pentago:
         # loading images
         self.folder = os.path.dirname(__file__)
         self.img_folder = os.path.join(self.folder, 'pentago_img')
+        self.sound_folder = os.path.join(self.folder, 'sound')
 
         # creating groups
         self.all_sprites = pygame.sprite.Group()
@@ -804,6 +806,13 @@ class Pentago:
         self.top_panel = TopPanel(self)
         self.settings_panel = SettingsPanel(self)
         self.info_panel = InfoPanel(self)
+        self.start_panel = StartPanel(self)
+
+        # sound effects
+        self.hover_sound = pygame.mixer.Sound(os.path.join(self.sound_folder, 'hover.wav'))
+        self.click_sound = pygame.mixer.Sound(os.path.join(self.sound_folder, 'click.wav'))
+        self.open_panel_sound = pygame.mixer.Sound(os.path.join(self.sound_folder, 'open_panel.wav'))
+        self.win_sound = pygame.mixer.Sound(os.path.join(self.sound_folder, 'win.wav'))
 
         # setting up icon
         icon_sprite = SpriteObject(self, self.create_img_path('icon.png'))
@@ -825,11 +834,38 @@ class Pentago:
         return filename, f'{filename.split(".")[0]}_hovered.png', f'{filename.split(".")[0]}_clicked.png'
 
     def restart(self):
+        self.start_panel.active = False
         self.info_panel.active = False
         self.settings_panel.active = False
         self.field.restart()
 
+    def start(self):
+        print(self.all_sprites)
+        while True:
+            self.clock.tick(self.FPS)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.settings.save()
+                    return 1
+
+                if event.type == pygame.KEYUP:
+                    return 0
+
+            # update
+            self.all_sprites.update()
+
+            # render
+            self.screen.fill(self.settings.get_color('background_color'))
+            self.all_sprites.draw(self.screen)
+
+            # return to display
+            pygame.display.flip()
+
     def run(self):
+        start_response = self.start()
+        if start_response == 1:
+            return
+        self.top_panel.active = True
         self.restart()
 
         running = True
@@ -838,8 +874,7 @@ class Pentago:
             for event in pygame.event.get():
                 # check for closing window
                 if event.type == pygame.QUIT:
-                    with open('settings.pkl', 'wb') as file:
-                        pickle.dump(self.settings, file)
+                    self.settings.save()
                     running = False
 
                 self.all_sprites.update(event)
@@ -848,8 +883,7 @@ class Pentago:
                     # debug settings changing
                     if pygame.key.get_pressed()[pygame.K_HOME]:
                         self.settings.back_to_default()
-                        with open('settings.pkl', 'wb') as file:
-                            pickle.dump(self.settings, file)
+                        self.settings.save()
                         running = False
 
                     if pygame.key.get_pressed()[pygame.K_2]:
@@ -863,6 +897,9 @@ class Pentago:
 
                     if pygame.key.get_pressed()[pygame.K_b]:
                         self.settings.update_theme('basic')
+
+                    if pygame.key.get_pressed()[pygame.K_a]:
+                        self.hover_sound.play()
 
                     # restart after finish
                     if any(self.field.get_conditions()):
@@ -899,6 +936,27 @@ class Pentago:
 
         for sprite in self.all_sprites_list:
             sprite.update_theme()
+
+    def open_settings_panel(self):
+        self.settings_panel.active = True
+        self.info_panel.active = False
+        self.field.active = False
+
+    def open_info_panel(self):
+        self.info_panel.active = True
+        self.settings_panel.active = False
+        self.field.active = False
+
+    def open_field(self):
+        self.field.active = True
+        self.settings_panel.active = False
+        self.info_panel.active = False
+
+    def settings_button_action(self):
+        if self.settings_panel.active:
+            self.open_field()
+        else:
+            self.open_settings_panel()
 
 
 def split_by_len(obj, num):
