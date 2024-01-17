@@ -83,6 +83,7 @@ class Field:
                 self.game.all_sprites_list.extend(row)
             self.game.all_sprites.add(subfield.counterclockwise_arrow, subfield.clockwise_arrow)
             self.game.all_sprites_list.extend((subfield.counterclockwise_arrow, subfield.clockwise_arrow))
+        self.game.all_sprites_list.extend(self.text_sprites)
 
     @property
     def active(self):
@@ -268,6 +269,23 @@ class CordSpriteObject(SpriteObject):
         old_topleft = self.rect.topleft
         self.rect = self.image.get_rect()
         self.rect.topleft = [i * (new_scale / old_scale) for i in old_topleft]
+
+
+class Number(CordSpriteObject):
+    def __init__(self, game, cords: (int, int), value: int = 0):
+        if not 0 <= value <= 9:
+            raise ValueError()
+        self.value = value
+        img = game.create_img_path(f'{self.value}.png')
+        super().__init__(game, img, cords)
+
+    def change_value(self, value):
+        if not 0 <= value <= 9:
+            raise ValueError()
+        self.value = value
+        img = game.create_img_path(f'{self.value}.png')
+        self.img_path = img
+        self.update_theme()
 
 
 class Button(CordSpriteObject):
@@ -616,6 +634,9 @@ class SettingsPanel(Panel):
         pink_theme_button = CordSpriteObject(self.game, self.game.create_img_path('pink_theme_button.png'),
                                              (150 * self.game.settings.scale,
                                               screen_settings_text.rect.bottom + 30 * self.game.settings.scale))
+        blue_theme_button = CordSpriteObject(self.game, self.game.create_img_path('blue_theme_button.png'),
+                                             (230 * self.game.settings.scale,
+                                              screen_settings_text.rect.bottom + 30 * self.game.settings.scale))
 
         theme_choice = Choice(self.game.settings.update_theme)
         basic_theme_button_frame = ChoiceButton(self.game,
@@ -630,6 +651,13 @@ class SettingsPanel(Panel):
                                                self.game.settings.theme == 'pale pink',
                                                theme_choice,
                                                ('pale pink',))
+        blue_theme_button_frame = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('theme_button_frame.png')),
+                                               (230 * self.game.settings.scale,
+                                                screen_settings_text.rect.bottom + 30 * self.game.settings.scale),
+                                               self.game.settings.theme == 'blue',
+                                               theme_choice,
+                                               ('blue',))
+
         resolution_choice = Choice(self.game.settings.update_scale)
         resolution_1x_button = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('resolution_button.png')),
                                             (42 * self.game.settings.scale, 247 * self.game.settings.scale),
@@ -642,8 +670,8 @@ class SettingsPanel(Panel):
                                             resolution_choice,
                                             (2,))
         self.add(settings_panel_sprite, rules_button, screen_settings_text, basic_theme_button,
-                 pink_theme_button, resolution_1x_button, resolution_2x_button,
-                 basic_theme_button_frame, pink_theme_button_frame)
+                 pink_theme_button, blue_theme_button, resolution_1x_button, resolution_2x_button,
+                 basic_theme_button_frame, pink_theme_button_frame, blue_theme_button_frame)
         self.game.all_sprites_list.extend(self.sprite_group)
 
 
@@ -697,6 +725,28 @@ class TopPanel(Panel):
         self.game.settings_panel.button_action()
 
 
+class BottomPanel(Panel):
+    def __init__(self, game):
+        super().__init__(game)
+        self.bottom_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('bottom_panel.png'),
+                                               (self.game.field.center[0], self.game.settings.height - 40))
+        y_center = self.bottom_panel_sprite.rect.top + 45 * self.game.settings.scale
+        cross_icon = CordSpriteObject(self.game, self.game.create_img_path('cross_icon.png'),
+                                      (40 * self.game.settings.scale, y_center))
+        zero_icon = CordSpriteObject(self.game, self.game.create_img_path('zero_icon.png'),
+                                     (52 * 5 * self.game.settings.scale, y_center))
+        draw_icon = CordSpriteObject(self.game, self.game.create_img_path('draw_icon.png'),
+                                     (94 * 5 * self.game.settings.scale, y_center))
+        self.scores = {'cross': Score(self.game, (23 * 50 * self.game.settings.scale, y_center), 0),
+                       'zero': Score(self.game, (66 * 50 * self.game.settings.scale, y_center), 0),
+                       'draw': Score(self.game, (23 * 50 * self.game.settings.scale, y_center), 0)}
+        self.game.all_sprites.add(self.bottom_panel_sprite)
+        self.add(cross_icon, zero_icon, draw_icon)
+        for score in self.scores.values():
+            self.add(score.nums)
+        self.game.all_sprites_list.extend(self.sprite_group)
+
+
 class StartPanel(Panel):
     def __init__(self, game):
         super().__init__(game)
@@ -707,15 +757,44 @@ class StartPanel(Panel):
         self.active = True
 
 
-class Settings:
-    def __init__(self, game, saved_settings=None):
+class Score:
+    def __init__(self, game, coords: (int, int), value: int = 0):
+        super().__init__()
         self.game = game
-        self.basic_settings = {'width': 600, 'height': 680, 'scale': 1, 'theme': 'basic',
+        self.coords = coords
+        if value < 0:
+            value = 0
+        if value > 99:
+            value = 99
+        self.value = value
+        self.nums = [Number(self.game,
+                            (self.coords[0] - 25 * self.game.settings.scale, self.coords[1]),
+                            self.value // 10),
+                     Number(self.game,
+                            (self.coords[0] + 25 * self.game.settings.scale, self.coords[1]),
+                            self.value % 10)]
+
+    def change_value(self, value):
+        if value < 0:
+            value = 0
+        if value > 99:
+            value = 99
+        self.value = value
+        self.nums[0].change_value(self.value // 10)
+        self.nums[1].change_value(self.value % 10)
+
+
+class Settings:
+    def __init__(self, game):
+        self.game = game
+        self.basic_settings = {'width': 600, 'height': 760, 'scale': 1, 'theme': 'basic',
                                'cell_width': 65, 'grid_width': 10}
         self.themes = {'basic': ((255, 255, 255, 255), (170, 220, 175, 255), (93, 143, 98, 255),
                                  (0, 0, 0, 255), (180, 180, 180, 255), (9, 56, 13, 255)),
                        'pale pink': ((254, 245, 239, 255), (220, 193, 196, 255), (157, 92, 99, 255),
-                                     (88, 75, 83, 255), (202, 155, 114, 255), (75, 29, 34, 255))}
+                                     (88, 75, 83, 255), (202, 155, 114, 255), (75, 29, 34, 255)),
+                       'blue': ((201, 231, 255, 255), (139, 191, 247, 255), (4, 135, 226, 255),
+                                (16, 14, 63, 255), (157, 217, 242, 255), (4, 45, 131))}
         try:
             with open('settings.json', 'r') as file:
                 saved_settings = json.load(file)
@@ -806,6 +885,7 @@ class Pentago:
         self.top_panel = TopPanel(self)
         self.settings_panel = SettingsPanel(self)
         self.info_panel = InfoPanel(self)
+        self.bottom_panel = BottomPanel(self)
         self.start_panel = StartPanel(self)
 
         # sound effects
@@ -866,6 +946,7 @@ class Pentago:
         if start_response == 1:
             return
         self.top_panel.active = True
+        self.bottom_panel.active = True
         self.restart()
 
         running = True
