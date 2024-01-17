@@ -2,8 +2,7 @@ import json
 import pygame
 import os
 from PIL import Image
-import time
-from typing import Callable, Any, Iterable, Tuple
+from typing import Callable, Iterable
 
 
 class Field:
@@ -31,32 +30,16 @@ class Field:
                                                 (lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1]),
                                                  lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)))
                                                 )
-        self.sign_cords = (self.game.settings.grid_width, 2 * self.game.settings.grid_width + self.game.settings.cell_width,
+        self.sign_cords = (self.game.settings.grid_width,
+                           2 * self.game.settings.grid_width + self.game.settings.cell_width,
                            3 * self.game.settings.grid_width + 2 * self.game.settings.cell_width)
-        self.sprites_init()
+        try:
+            with open('score.json') as file:
+                self.score_values = json.load(file)
 
-    def update_scale(self):
-        self.center = self.game.settings.field_center()
-        subfield_center_dist = self.game.settings.subfield_center_distance()
-        self.subfield_cords = ((self.center[0] - subfield_center_dist, self.center[1] - subfield_center_dist),
-                               (self.center[0] + subfield_center_dist, self.center[1] - subfield_center_dist),
-                               (self.center[0] - subfield_center_dist, self.center[1] + subfield_center_dist),
-                               (self.center[0] + subfield_center_dist, self.center[1] + subfield_center_dist)
-                               )
-        self.arrow_cords_from_subfield_cords = ((lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1]),
-                                                 lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25))),
-                                                (lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25)),
-                                                 lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1])),
-                                                (lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)),
-                                                 lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1])),
-                                                (lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1]),
-                                                 lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)))
-                                                )
-        self.sign_cords = (
-        self.game.settings.grid_width, 2 * self.game.settings.grid_width + self.game.settings.cell_width,
-        3 * self.game.settings.grid_width + 2 * self.game.settings.cell_width)
+        except FileNotFoundError:
+            self.score_values = {'cross': 0, 'zero': 0, 'draw': 0}
 
-    def sprites_init(self):
         arrow_filenames = (('arrow_left_up_lefter.png', 'arrow_left_up_upper.png'),
                            ('arrow_right_up_upper.png', 'arrow_right_up_righter.png'),
                            ('arrow_left_down_downer.png', 'arrow_left_down_lefter.png'),
@@ -85,6 +68,35 @@ class Field:
             self.game.all_sprites_list.extend((subfield.counterclockwise_arrow, subfield.clockwise_arrow))
         self.game.all_sprites_list.extend(self.text_sprites)
 
+    def save_score(self):
+        with open('score.json', 'w') as file:
+            json.dump(self.score_values, file)
+
+    def reset_score(self):
+        self.score_values = {'cross': 0, 'zero': 0, 'draw': 0}
+        self.game.bottom_panel.update_score()
+
+    def update_scale(self):
+        self.center = self.game.settings.field_center()
+        subfield_center_dist = self.game.settings.subfield_center_distance()
+        self.subfield_cords = ((self.center[0] - subfield_center_dist, self.center[1] - subfield_center_dist),
+                               (self.center[0] + subfield_center_dist, self.center[1] - subfield_center_dist),
+                               (self.center[0] - subfield_center_dist, self.center[1] + subfield_center_dist),
+                               (self.center[0] + subfield_center_dist, self.center[1] + subfield_center_dist)
+                               )
+        self.arrow_cords_from_subfield_cords = ((lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1]),
+                                                 lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25))),
+                                                (lambda cords: (cords[0], cords[1] - (subfield_center_dist + 25)),
+                                                 lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1])),
+                                                (lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)),
+                                                 lambda cords: (cords[0] - (subfield_center_dist + 25), cords[1])),
+                                                (lambda cords: (cords[0] + (subfield_center_dist + 25), cords[1]),
+                                                 lambda cords: (cords[0], cords[1] + (subfield_center_dist + 25)))
+                                                )
+        self.sign_cords = (self.game.settings.grid_width,
+                           2 * self.game.settings.grid_width + self.game.settings.cell_width,
+                           3 * self.game.settings.grid_width + 2 * self.game.settings.cell_width)
+
     @property
     def active(self):
         return self._active
@@ -106,7 +118,7 @@ class Field:
         return self._current_step
 
     @current_step.setter
-    def current_step(self, current_step):
+    def current_step(self, current_step: int):
         if current_step not in (-1, 0, 1):
             raise ValueError(f'invalid current_step: {current_step}')
         self._current_step = current_step
@@ -116,7 +128,7 @@ class Field:
         res = [None] * 6
         for i in range(3):
             res[i] = self.field[0][i] + self.field[1][i]
-            res[3+i] = self.field[2][i] + self.field[3][i]
+            res[3 + i] = self.field[2][i] + self.field[3][i]
         return res
 
     def is_any_empty_subfields(self):
@@ -133,17 +145,8 @@ class Field:
             self.set_arrows_active(True)
 
         self.win_draw_check()
-
         if self.cross_won or self.zero_won or self.draw:
             self.active = False
-            self.game.all_sprites.add(self.restart_sprite)
-            self.game.win_sound.play()
-            if self.cross_won:
-                self.game.all_sprites.add(self.cross_won_sprite)
-            elif self.zero_won:
-                self.game.all_sprites.add(self.zero_won_sprite)
-            else:
-                self.game.all_sprites.add(self.draw_sprite)
 
     def set_subfields_active(self, active: bool) -> None:
         print(self.__dict__)
@@ -156,6 +159,7 @@ class Field:
 
     def win_draw_check(self):
         type_field = list(map(lambda x: [type(i) for i in x], self.unite()))
+        old = (self.cross_won, self.zero_won, self.draw)
 
         for i in range(6):
             # horizontal
@@ -208,6 +212,24 @@ class Field:
             self.cross_won, self.zero_won = False, False
             self.draw = True
 
+        new = (self.cross_won, self.zero_won, self.draw)
+        if old == new:
+            return
+
+        if self.cross_won or self.zero_won or self.draw:
+            self.game.all_sprites.add(self.restart_sprite)
+            self.game.win_sound.play()
+            if self.cross_won:
+                self.game.all_sprites.add(self.cross_won_sprite)
+                self.score_values['cross'] += 1
+            elif self.zero_won:
+                self.game.all_sprites.add(self.zero_won_sprite)
+                self.score_values['zero'] += 1
+            else:
+                self.game.all_sprites.add(self.draw_sprite)
+                self.score_values['draw'] += 1
+            self.game.bottom_panel.update_score()
+
     def restart(self):
         self.game.all_sprites.remove(self.text_sprites)
         for subfield in self.field:
@@ -225,7 +247,7 @@ class Field:
 
 
 class Choice:
-    def __init__(self, action=None, *args):
+    def __init__(self, action: Callable = None, *args):
         self.buttons = list(args)
         if action is None:
             self.action = lambda *args: None
@@ -279,11 +301,11 @@ class Number(CordSpriteObject):
         img = game.create_img_path(f'{self.value}.png')
         super().__init__(game, img, cords)
 
-    def change_value(self, value):
+    def change_value(self, value: int):
         if not 0 <= value <= 9:
             raise ValueError()
         self.value = value
-        img = game.create_img_path(f'{self.value}.png')
+        img = self.game.create_img_path(f'{self.value}.png')
         self.img_path = img
         self.update_theme()
 
@@ -472,7 +494,7 @@ class SubField(pygame.sprite.Sprite):
 
 
 class Arrow(Button):
-    def __init__(self, game, cords, imgs, subfield, clockwise):
+    def __init__(self, game, cords: (int, int), imgs: (str, str), subfield: SubField, clockwise: bool):
         super().__init__(game, imgs, cords)
         self.subfield = subfield
         self.clockwise = clockwise
@@ -489,12 +511,12 @@ class Arrow(Button):
         self.subfield.rotate_counterclockwise()
         self.subfield.field.current_step = 0
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'({"clockwise" if self.clockwise else "counterclockwise"} Arrow of {str(self.subfield)})'
 
 
 class Cell(pygame.sprite.Sprite):
-    def __init__(self, game, subfield, x, y):
+    def __init__(self, game, subfield: SubField, x: int, y: int):
         super().__init__()
         self.game = game
         self.subfield = subfield
@@ -513,10 +535,10 @@ class Cell(pygame.sprite.Sprite):
     def set_active(self, active: bool) -> None:
         self.active = active
 
-    def get_cords(self):
+    def get_cords(self) -> (int, int):
         return self.cords
 
-    def change_pos(self, x, y):
+    def change_pos(self, x: int, y: int):
         self.cords = (x, y)
         self.rect.topleft = (self.subfield.rect.topleft[0] + self.subfield.field.sign_cords[self.cords[0]],
                              self.subfield.rect.topleft[1] + self.subfield.field.sign_cords[self.cords[1]])
@@ -552,12 +574,12 @@ class Cell(pygame.sprite.Sprite):
         self.hovered_image.fill(self.game.settings.get_color('hovered_color'))
         self.image = self.basic_image
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'(Cell[{self.cords[1]}][{self.cords[0]}] of {str(self.subfield)})'
 
 
 class Sign(Cell):
-    def __init__(self, game, field, image, x, y):
+    def __init__(self, game, field: SubField, image: str, x: int, y: int):
         super().__init__(game, field, x, y)
         self.img_path = image
         self.image = pygame.image.load(self.img_path)
@@ -577,12 +599,12 @@ class Sign(Cell):
 
 
 class Cross(Sign):
-    def __init__(self, game, field, x, y):
+    def __init__(self, game, field: SubField, x: int, y: int):
         super().__init__(game, field, game.create_img_path('cross.png'), x, y)
 
 
 class Zero(Sign):
-    def __init__(self, game, field, x, y):
+    def __init__(self, game, field: SubField, x: int, y: int):
         super().__init__(game, field, game.create_img_path('zero.png'), x, y)
 
 
@@ -593,11 +615,11 @@ class Panel:
         self._active = False
 
     @property
-    def active(self):
+    def active(self) -> bool:
         return self._active
 
     @active.setter
-    def active(self, active):
+    def active(self, active: bool):
         self._active = active
         if self.active:
             self.open()
@@ -618,16 +640,16 @@ class SettingsPanel(Panel):
     def __init__(self, game):
         super().__init__(game)
         settings_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('settings_panel.png'),
-                                                 (160 * self.game.settings.scale,
+                                                 (32 * 5 * self.game.settings.scale,
                                                   self.game.top_panel.top_panel_sprite.rect.bottom +
-                                                  152 * self.game.settings.scale))
+                                                  43 * 5 * self.game.settings.scale))
         rules_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('rules_button.png')),
                               (settings_panel_sprite.rect.center[0],
-                               settings_panel_sprite.rect.top + 40 * self.game.settings.scale),
-                               self.game.open_info_panel)
+                               settings_panel_sprite.rect.top + 7.5 * 5 * self.game.settings.scale),
+                              self.game.open_info_panel)
         screen_settings_text = CordSpriteObject(self.game, self.game.create_img_path('screen_settings_text.png'),
                                                 (settings_panel_sprite.rect.center[0],
-                                                 rules_button.rect.bottom + 100 * self.game.settings.scale))
+                                                 rules_button.rect.bottom + 19.5 * 5 * self.game.settings.scale))
         basic_theme_button = CordSpriteObject(self.game, self.game.create_img_path('basic_theme_button.png'),
                                               (70 * self.game.settings.scale,
                                                screen_settings_text.rect.bottom + 30 * self.game.settings.scale))
@@ -635,44 +657,75 @@ class SettingsPanel(Panel):
                                              (150 * self.game.settings.scale,
                                               screen_settings_text.rect.bottom + 30 * self.game.settings.scale))
         blue_theme_button = CordSpriteObject(self.game, self.game.create_img_path('blue_theme_button.png'),
-                                             (230 * self.game.settings.scale,
+                                             (47 * 5 * self.game.settings.scale,
                                               screen_settings_text.rect.bottom + 30 * self.game.settings.scale))
+        game_settings_text = CordSpriteObject(self.game, self.game.create_img_path('game_text.png'),
+                                              (settings_panel_sprite.rect.center[0],
+                                               basic_theme_button.rect.bottom + 7.5 * 5 * self.game.settings.scale))
+        reset_settings_button = Button(self.game,
+                                       self.game.create_img_path(self.game.add_hovered('reset_settings_button.png')),
+                                       (29 * 5 * self.game.settings.scale,
+                                        game_settings_text.rect.bottom + 4.5 * 5 * self.game.settings.scale),
+                                       self.reset_settings_button_click)
+        reset_score_button = Button(self.game,
+                                    self.game.create_img_path(self.game.add_hovered('reset_score_button.png')),
+                                    (23.5 * 5 * self.game.settings.scale,
+                                     reset_settings_button.rect.bottom + 4.5 * 5 * self.game.settings.scale),
+                                    self.game.field.reset_score)
 
-        theme_choice = Choice(self.game.settings.update_theme)
-        basic_theme_button_frame = ChoiceButton(self.game,
-            self.game.create_img_path(self.game.add_hovered_clicked('theme_button_frame.png')),
-            (70 * self.game.settings.scale, screen_settings_text.rect.bottom + 30 * self.game.settings.scale),
-            self.game.settings.theme == 'basic',
-            theme_choice,
-            ('basic',))
-        pink_theme_button_frame = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('theme_button_frame.png')),
+        self.theme_choice = Choice(self.game.settings.update_theme)
+        self.basic_theme_button_frame = ChoiceButton(self.game,
+                                                     self.game.create_img_path(
+                                                         self.game.add_hovered_clicked('theme_button_frame.png')),
+                                                     (70 * self.game.settings.scale,
+                                                      screen_settings_text.rect.bottom + 30 * self.game.settings.scale),
+                                                     self.game.settings.theme == 'basic',
+                                                     self.theme_choice,
+                                                     ('basic',))
+        pink_theme_button_frame = ChoiceButton(self.game,
+                                               self.game.create_img_path(
+                                                   self.game.add_hovered_clicked('theme_button_frame.png')),
                                                (150 * self.game.settings.scale,
                                                 screen_settings_text.rect.bottom + 30 * self.game.settings.scale),
                                                self.game.settings.theme == 'pale pink',
-                                               theme_choice,
+                                               self.theme_choice,
                                                ('pale pink',))
-        blue_theme_button_frame = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('theme_button_frame.png')),
-                                               (230 * self.game.settings.scale,
+        blue_theme_button_frame = ChoiceButton(self.game,
+                                               self.game.create_img_path(
+                                                   self.game.add_hovered_clicked('theme_button_frame.png')),
+                                               (47 * 5 * self.game.settings.scale,
                                                 screen_settings_text.rect.bottom + 30 * self.game.settings.scale),
                                                self.game.settings.theme == 'blue',
-                                               theme_choice,
+                                               self.theme_choice,
                                                ('blue',))
 
-        resolution_choice = Choice(self.game.settings.update_scale)
-        resolution_1x_button = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('resolution_button.png')),
-                                            (42 * self.game.settings.scale, 247 * self.game.settings.scale),
-                                            self.game.settings.scale == 1,
-                                            resolution_choice,
-                                            (1,))
-        resolution_2x_button = ChoiceButton(self.game, self.game.create_img_path(self.game.add_hovered_clicked('resolution_button.png')),
-                                            (42 * self.game.settings.scale, 277 * self.game.settings.scale),
+        self.resolution_choice = Choice(self.game.settings.update_scale)
+        self.resolution_1x_button = ChoiceButton(self.game,
+                                                 self.game.create_img_path(
+                                                     self.game.add_hovered_clicked('resolution_button.png')),
+                                                 (42 * self.game.settings.scale,
+                                                  screen_settings_text.rect.top + 19.5 * 5 * self.game.settings.scale),
+                                                 self.game.settings.scale == 1,
+                                                 self.resolution_choice,
+                                                 (1,))
+        resolution_2x_button = ChoiceButton(self.game,
+                                            self.game.create_img_path(
+                                                self.game.add_hovered_clicked('resolution_button.png')),
+                                            (42 * self.game.settings.scale,
+                                             screen_settings_text.rect.top + 25.5 * 5 * self.game.settings.scale),
                                             self.game.settings.scale == 2,
-                                            resolution_choice,
+                                            self.resolution_choice,
                                             (2,))
         self.add(settings_panel_sprite, rules_button, screen_settings_text, basic_theme_button,
-                 pink_theme_button, blue_theme_button, resolution_1x_button, resolution_2x_button,
-                 basic_theme_button_frame, pink_theme_button_frame, blue_theme_button_frame)
+                 pink_theme_button, blue_theme_button, self.resolution_1x_button, resolution_2x_button,
+                 self.basic_theme_button_frame, pink_theme_button_frame, blue_theme_button_frame,
+                 game_settings_text, reset_settings_button, reset_score_button)
         self.game.all_sprites_list.extend(self.sprite_group)
+
+    def reset_settings_button_click(self):
+        self.theme_choice.on_click(self.basic_theme_button_frame, 'basic')
+        self.resolution_choice.on_click(self.resolution_1x_button, 1)
+        self.game.settings.back_to_default()
 
 
 class InfoPanel(Panel):
@@ -681,7 +734,8 @@ class InfoPanel(Panel):
         info_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('rules.png'),
                                              self.game.field.center)
         close_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('close_button.png')),
-                              (self.game.settings.width - 40, 40 * self.game.settings.scale),
+                              (self.game.settings.width - 8.5 * 5 * self.game.settings.scale,
+                               7.5 * 5 * self.game.settings.scale),
                               self.game.open_field)
         self.add(info_panel_sprite, close_button)
         self.game.all_sprites_list.extend(self.sprite_group)
@@ -705,18 +759,18 @@ class TopPanel(Panel):
     def __init__(self, game):
         super().__init__(game)
         self.top_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('top_panel.png'),
-                                            (self.game.field.center[0],
-                                             40 * self.game.settings.scale))
+                                                 (self.game.field.center[0],
+                                                  40 * self.game.settings.scale))
         self.restart_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('restart_button.png')),
-                                (self.game.settings.width - 40,
-                                 40 * self.game.settings.scale),
-                                self.game.restart)
+                                     (self.game.settings.width - 7.5 * 5 * self.game.settings.scale,
+                                      7.5 * 5 * self.game.settings.scale),
+                                     self.game.restart)
         settings_button = Button(self.game, self.game.create_img_path(self.game.add_hovered('settings_button.png')),
-                                 (45 * game.settings.scale, 40 * self.game.settings.scale),
+                                 (8.5 * 5 * game.settings.scale, 7.5 * 5 * self.game.settings.scale),
                                  self.game.settings_button_action)
         pentago_text = CordSpriteObject(self.game, self.game.create_img_path('pentago_text.png'),
                                         (self.game.field.center[0],
-                                         40 * self.game.settings.scale))
+                                         7.5 * 5 * self.game.settings.scale))
         self.game.all_sprites.add(self.top_panel_sprite, pentago_text)
         self.add(self.restart_button, settings_button)
         self.game.all_sprites_list.extend(self.sprite_group)
@@ -729,22 +783,31 @@ class BottomPanel(Panel):
     def __init__(self, game):
         super().__init__(game)
         self.bottom_panel_sprite = CordSpriteObject(self.game, self.game.create_img_path('bottom_panel.png'),
-                                               (self.game.field.center[0], self.game.settings.height - 40))
-        y_center = self.bottom_panel_sprite.rect.top + 45 * self.game.settings.scale
+                                                    (self.game.field.center[0], self.game.settings.height - 40))
+        y_center = self.bottom_panel_sprite.rect.top + 42 * self.game.settings.scale
         cross_icon = CordSpriteObject(self.game, self.game.create_img_path('cross_icon.png'),
-                                      (40 * self.game.settings.scale, y_center))
+                                      (38 * self.game.settings.scale, y_center))
         zero_icon = CordSpriteObject(self.game, self.game.create_img_path('zero_icon.png'),
-                                     (52 * 5 * self.game.settings.scale, y_center))
+                                     ((52 * 5 - 2) * self.game.settings.scale, y_center))
         draw_icon = CordSpriteObject(self.game, self.game.create_img_path('draw_icon.png'),
-                                     (94 * 5 * self.game.settings.scale, y_center))
-        self.scores = {'cross': Score(self.game, (23 * 50 * self.game.settings.scale, y_center), 0),
-                       'zero': Score(self.game, (66 * 50 * self.game.settings.scale, y_center), 0),
-                       'draw': Score(self.game, (23 * 50 * self.game.settings.scale, y_center), 0)}
+                                     ((94 * 5 - 2) * self.game.settings.scale, y_center))
+        score_values = self.game.field.score_values
+        self.scores = {'cross': Score(self.game, (23 * 5 * self.game.settings.scale, y_center),
+                                      score_values['cross']),
+                       'zero': Score(self.game, (66 * 5 * self.game.settings.scale, y_center),
+                                     score_values['zero']),
+                       'draw': Score(self.game, (109 * 5 * self.game.settings.scale, y_center),
+                                     score_values['draw'])}
         self.game.all_sprites.add(self.bottom_panel_sprite)
         self.add(cross_icon, zero_icon, draw_icon)
         for score in self.scores.values():
             self.add(score.nums)
         self.game.all_sprites_list.extend(self.sprite_group)
+
+    def update_score(self):
+        for i in ('cross', 'zero', 'draw'):
+            if self.scores[i].value != self.game.field.score_values[i]:
+                self.scores[i].change_value(self.game.field.score_values[i])
 
 
 class StartPanel(Panel):
@@ -768,13 +831,13 @@ class Score:
             value = 99
         self.value = value
         self.nums = [Number(self.game,
-                            (self.coords[0] - 25 * self.game.settings.scale, self.coords[1]),
+                            (self.coords[0] - 22.5 * self.game.settings.scale, self.coords[1]),
                             self.value // 10),
                      Number(self.game,
-                            (self.coords[0] + 25 * self.game.settings.scale, self.coords[1]),
+                            (self.coords[0] + 22.5 * self.game.settings.scale, self.coords[1]),
                             self.value % 10)]
 
-    def change_value(self, value):
+    def change_value(self, value: int):
         if value < 0:
             value = 0
         if value > 99:
@@ -818,7 +881,7 @@ class Settings:
                   'clickable_color', 'text_color', 'hovered_color', 'interface_color')
         return self.themes[self.theme][colors.index(color_name)]
 
-    def get_color_palet(self, palet_name: str = None):
+    def get_color_palet(self, palet_name: str = None) -> ((int, int, int, int) * 6):
         if palet_name is None:
             return self.themes[self.theme]
         return self.themes[palet_name]
@@ -843,17 +906,17 @@ class Settings:
         print(self.__dict__)
         self.game.update_screen_theme()
 
-    def back_to_default(self):
+    def back_to_default(self) -> None:
         self.update_scale(1)
         self.update_theme('basic')
 
-    def field_center(self):
+    def field_center(self) -> (int, int):
         return self.width // 2, self.width // 2 + 80 * self.scale
 
-    def subfield_center_distance(self):
+    def subfield_center_distance(self) -> int:
         return int(self.grid_width * 2.5 + self.cell_width * 1.5)
 
-    def save(self):
+    def save(self) -> None:
         with open('settings.json', 'w') as file:
             settings = {'width': self.width, 'height': self.height, 'scale': self.scale,
                         'theme': self.theme, 'cell_width': self.cell_width, 'grid_width': self.grid_width}
@@ -868,6 +931,7 @@ class Pentago:
 
         # creating game and window
         pygame.init()
+        pygame.mixer.init()
         self.screen = pygame.display.set_mode((self.settings.width, self.settings.height))
         pygame.display.set_caption("")
         self.clock = pygame.time.Clock()
@@ -926,9 +990,10 @@ class Pentago:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.settings.save()
+                    self.field.save_score()
                     return 1
 
-                if event.type == pygame.KEYUP:
+                if event.type in (pygame.KEYUP, pygame.MOUSEBUTTONUP):
                     return 0
 
             # update
@@ -956,6 +1021,7 @@ class Pentago:
                 # check for closing window
                 if event.type == pygame.QUIT:
                     self.settings.save()
+                    self.field.save_score()
                     running = False
 
                 self.all_sprites.update(event)
@@ -1042,7 +1108,7 @@ class Pentago:
 
 def split_by_len(obj, num):
     for i in range(num, len(obj) + 1, num):
-        yield obj[i-num:i]
+        yield obj[i - num:i]
 
 
 def scaled_data_gen(data, scale):
@@ -1055,16 +1121,6 @@ def scaled_data_gen(data, scale):
             yield from new_row
 
 
-def time_decorator(func):
-    def wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        res = func(*args, **kwargs)
-        end_time = time.perf_counter() - start_time
-        print(f'function {func.__name__} took {end_time}')
-        return res
-    return wrapper
-
-
 def collide(cords, obj):
     x, y = cords
     if obj.rect.left <= x <= obj.rect.right and obj.rect.top <= y <= obj.rect.bottom:
@@ -1072,7 +1128,6 @@ def collide(cords, obj):
     return False
 
 
-@time_decorator
 def update_images(new_colors=None, scale=1) -> None:
     """Updates (or creates if not created) game images by given parameters
     new_colors = (background_color, non_clickable_color, clickable_color, text_color, hovered_color, interface_color)
@@ -1134,6 +1189,6 @@ def update_images(new_colors=None, scale=1) -> None:
 
 
 if __name__ == '__main__':
-    game = Pentago()
-    game.run()
+    pentago = Pentago()
+    pentago.run()
     pygame.quit()
