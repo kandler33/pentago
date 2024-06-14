@@ -1,0 +1,13 @@
+{
+  "base_width": 600,
+  "base_height": 760,
+  "base_cell_width": 65,
+  "base_grid_width": 10,
+  "scale": 1,
+  "theme": "basic",
+  "sound_state": 1,
+  "data_folder": "data",
+  "img_folder": "pentago_img",
+  "base_img_folder": "base_img",
+  "db_filename": "db.sqlite3"
+}
