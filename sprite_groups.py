@@ -785,8 +785,9 @@ class SpriteGroups(pygame.sprite.Group):
         self.restart_button_action()
 
     def update(self, event: pygame.event.Event = None) -> None:
-        if event is not None and any(self.field.get_conditions()):
-            if event.type == pygame.KEYDOWN and pygame.key.get_pressed()[pygame.K_SPACE]:
+        if any(self.field.get_conditions()):
+            self.bottom_panel.update_score()
+            if event is not None and event.type == pygame.KEYDOWN and pygame.key.get_pressed()[pygame.K_SPACE]:
                 self.restart_button_action()
 
         for group in self.groups:

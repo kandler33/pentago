@@ -1,6 +1,8 @@
 data/pentago_img
 data/score.json
 data/settings.json
+
+script.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

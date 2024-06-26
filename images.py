@@ -1,4 +1,4 @@
-import os
+import itertools
 
 from PIL import Image
 
@@ -34,8 +34,7 @@ class ImageCreator:
     
     @staticmethod
     def split_by_len(obj, num):
-        for i in range(num, len(obj) + 1, num):
-            yield obj[i - num : i]
+        yield from itertools.batched(obj, num)
 
     @staticmethod
     def scaled_data_gen(data, scale):
@@ -47,6 +46,10 @@ class ImageCreator:
             for _ in range(scale):
                 yield from new_row
 
+    @staticmethod
+    def apply_palet(data, palet):
+        yield from (palet.get(color, (255, 255, 255, 0)) for color in data)
+
     def create_non_themeable_img(self, input_path, output_path):
         with Image.open(input_path).convert(
                 "RGBA"
@@ -54,12 +57,13 @@ class ImageCreator:
             new_img = Image.new(
                 "RGBA", (base_img.width * settings.scale * 5, base_img.height * settings.scale * 5)
             )
-            data = tuple(self.split_by_len(tuple(base_img.getdata()), base_img.width))
-            new_data = tuple(self.scaled_data_gen(data, settings.scale * 5))
-            new_img.putdata(new_data)
+            data = self.split_by_len(base_img.getdata(), base_img.width)
+            data = tuple(self.scaled_data_gen(data, settings.scale * 5))
+            new_img.putdata(data)
             new_img.save(output_path)
 
-    def create_themeable_img(self, input_path, output_path):
+    def create_themeable_img(self, input_path, output_path, hovered=False):
+        palet = self.hovered_palet if hovered else self.palet
         with Image.open(input_path).convert(
                 "RGBA"
         ) as base_img:
@@ -67,30 +71,11 @@ class ImageCreator:
                 "RGBA",
                 (base_img.width * settings.scale * 5, base_img.height * settings.scale * 5),
             )
-            data = tuple(self.split_by_len(tuple(base_img.getdata()), base_img.width))
-            new_data = tuple(
-                map(
-                    lambda x: self.palet.get(x, (255, 255, 255, 0)),
-                    self.scaled_data_gen(data, settings.scale * 5),
-                )
-            )
-            new_img.putdata(new_data)
+            data = self.apply_palet(base_img.getdata(), palet)
+            data = self.split_by_len(data, base_img.width)
+            data = tuple(self.scaled_data_gen(data, settings.scale * 5))
+            new_img.putdata(data)
             new_img.save(output_path)
 
     def create_hovered_img(self, input_path, output_path):
-        with Image.open(input_path).convert(
-                "RGBA"
-        ) as base_img:
-            hovered_img = Image.new(
-                "RGBA",
-                (base_img.width * settings.scale * 5, base_img.height * settings.scale * 5),
-            )
-            data = tuple(self.split_by_len(tuple(base_img.getdata()), base_img.width))
-            hovered_data = tuple(
-                map(
-                    lambda x: self.hovered_palet.get(x, (255, 255, 255, 0)),
-                    self.scaled_data_gen(data, settings.scale * 5),
-                )
-            )
-            hovered_img.putdata(hovered_data)
-            hovered_img.save(output_path)
+        self.create_themeable_img(input_path, output_path, True)

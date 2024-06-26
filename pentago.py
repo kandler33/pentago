@@ -1,5 +1,3 @@
-import os
-
 import pygame
 
 from sprite_groups import SpriteGroups

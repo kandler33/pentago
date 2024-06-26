@@ -51,10 +51,3 @@ class Database:
 
 
 database = Database(os.path.join(settings.data_folder, settings.db_filename))
-
-
-if __name__ == "__main__":
-    db = Database("test.sqlite3")
-    print(db.update("hihihiha", 1, grr="wasd"))
-    print(db.get_from("hihihiha", id=1))
-    print(db.select_from("hihihiha"))
