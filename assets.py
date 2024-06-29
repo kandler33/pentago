@@ -20,23 +20,23 @@ class Asset:
     clicked_filename: str = None
 
     @property
-    def normal_path(self):
+    def normal_path(self) -> str:
         return os.path.join(settings.img_path, self.normal_filename)
 
     @property
-    def hovered_path(self):
+    def hovered_path(self) -> str:
         return os.path.join(settings.img_path, self.hovered_filename)
 
     @property
-    def base_path(self):
+    def base_path(self) -> str:
         return os.path.join(settings.base_img_path, self.base_filename)
 
     @property
-    def base_clicked_path(self):
+    def base_clicked_path(self) -> str:
         return os.path.join(settings.base_img_path, self.base_clicked_filename)
 
     @property
-    def clicked_path(self):
+    def clicked_path(self) -> str:
         return os.path.join(settings.img_path, self.clicked_filename)
 
 
@@ -52,24 +52,36 @@ class Assets:
 
         data = self.db.get_from("asset", name=asset_name)
         asset = Asset(**data)
+        self._create_imgs(asset)
+
+        self.assets[asset.name] = asset
+        return asset
+
+    def _create_imgs(self, asset: Asset) -> None:
         save_flag = False
-        if asset.normal_filename is None:
+        if (
+            asset.normal_filename is None
+            or not os.path.exists(asset.normal_path)
+        ):
             self._create_normal_img(asset)
             save_flag = True
 
-        if asset.hoverable and asset.hovered_filename is None:
+        if asset.hoverable and (
+                asset.hovered_filename is None
+                or not os.path.exists(asset.hovered_path)
+        ):
             self._create_hovered_img(asset)
             save_flag = True
 
-        if asset.clickable and asset.clicked_filename is None:
+        if asset.clickable and (
+            asset.clicked_filename is None
+            or not os.path.exists(asset.clicked_path)
+        ):
             self._create_clicked_img(asset)
             save_flag = True
 
         if save_flag:
             self._save_asset(asset)
-
-        self.assets[asset.name] = asset
-        return asset
 
     def _create_normal_img(self, asset: Asset) -> None:
         normal_filename = self._normal_filename(asset.name)
